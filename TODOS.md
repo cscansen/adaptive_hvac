@@ -58,26 +58,6 @@ Also: `sensor.east_yard_soil_sensor_evapotranspiration` goes `unknown` when the 
 
 ---
 
-## Garage Morning Ventilation — PENDING (2026-05-16)
-
-Open garage doors + cycle fans at 6am in summer when outdoor air is cooler than garage and weather is nice.
-
-**Key decisions still needed before building:**
-1. Confirm Option A (full open) is acceptable — doors only support open/close, no partial position
-2. Person entity IDs for home-presence guard (`person.*`)
-3. Temp delta threshold — suggest outdoor must be ≥5°F cooler than garage interior
-4. Hard close time — 9am proposed
-5. `input_boolean.garage_morning_ventilation_enabled` kill switch — yes/no?
-
-**Design summary:**
-- `garage_morning_ventilation_on` — trigger 6am; conditions: summer season, nice weather (sunny/partlycloudy/windy), outdoor < garage temp, someone home, fan not user-claimed; actions: open both covers + fans on
-- `garage_morning_ventilation_off` — triggers: 9am hard cutoff (unconditional), temp equalized, weather turns bad; actions: close both doors + fans off (if not claimed)
-- Weather "nice" = `sunny, partlycloudy, windy, clear-night`; "bad" = `rainy, pouring, lightning, lightning-rainy, hail, fog`
-- Covers: `cover.lexus_garage_door`, `cover.pony_garage_door` (both open/close only, supported_features: 3)
-- Fan: `switch.garage_fans`, lock: `input_boolean.fan_user_claimed_garage`
-
----
-
 ## HVAC Fan Lock — DONE (2026-05-16)
 
 Implemented via counter-automation pattern (no YAML surgery). Helpers in `configuration.yaml`. Automations:
