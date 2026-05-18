@@ -1,0 +1,473 @@
+{
+    "id": "hvac_cooling",
+    "alias": "HVAC Cooling",
+    "description": "Full cooling decision tree. Trigger-level for: handles the 30-min passive wait before escalating to AC. Drops hvac_managed_cooling \u2014 not needed with single-flow design.",
+    "triggers": [
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "below": 70,
+            "for": "00:05:00",
+            "id": "comfortable"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "above": 71.9,
+            "for": "00:02:00",
+            "id": "passive"
+        },
+        {
+            "trigger": "template",
+            "value_template": "{{ states('sensor.caleb_s_office_hygrometer_temperature') | float(0) >= 70 and states('sensor.caleb_s_office_hygrometer_humidity') | float(0) > 55 }}",
+            "for": "00:02:00",
+            "id": "passive_humid"
+        },
+        {
+            "trigger": "template",
+            "value_template": "{{ states('sensor.caleb_s_office_hygrometer_temperature') | float(0) >= 74 and states('sensor.power_production_now') | float(0) > 2000 and 10 <= now().hour < 15 }}",
+            "for": "00:02:00",
+            "id": "escalate_solar"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "above": 73.9,
+            "for": "00:30:00",
+            "id": "escalate_standard"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "above": 77.9,
+            "id": "emergency"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.meter_pro_2689_temperature",
+            "above": 71.9,
+            "for": "00:05:00",
+            "id": "master_bedroom_passive"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "binary_sensor.windows_assumed_open",
+            "to": "on",
+            "id": "windows_open"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "binary_sensor.windows_assumed_open",
+            "to": "off",
+            "id": "windows_closed"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "state",
+            "entity_id": "input_boolean.hvac_manual_override",
+            "state": "off"
+        },
+        {
+            "condition": "not",
+            "conditions": [
+                {
+                    "condition": "state",
+                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                    "state": [
+                        "unavailable",
+                        "unknown"
+                    ]
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "comfortable"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "if": [
+                                {
+                                    "condition": "numeric_state",
+                                    "entity_id": "sensor.meter_pro_2689_temperature",
+                                    "above": 70
+                                }
+                            ],
+                            "then": [
+                                {
+                                    "action": "fan.turn_on",
+                                    "target": {
+                                        "entity_id": [
+                                            "fan.caleb_office_ceiling",
+                                            "fan.tia_office_ceiling_fan",
+                                            "fan.fan"
+                                        ]
+                                    },
+                                    "data": {
+                                        "percentage": 25
+                                    }
+                                }
+                            ],
+                            "else": [
+                                {
+                                    "action": "fan.turn_off",
+                                    "target": {
+                                        "entity_id": [
+                                            "fan.caleb_office_ceiling",
+                                            "fan.tia_office_ceiling_fan",
+                                            "fan.fan"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": [
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "climate.downstairs_thermostat",
+                                            "attribute": "fan_mode",
+                                            "state": "on"
+                                        }
+                                    ],
+                                    "then": [
+                                        {
+                                            "action": "climate.set_fan_mode",
+                                            "target": {
+                                                "entity_id": "climate.downstairs_thermostat"
+                                            },
+                                            "data": {
+                                                "fan_mode": "auto"
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "windows_closed"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "if": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "climate.downstairs_thermostat",
+                                    "attribute": "fan_mode",
+                                    "state": "on"
+                                }
+                            ],
+                            "then": [
+                                {
+                                    "action": "climate.set_fan_mode",
+                                    "target": {
+                                        "entity_id": "climate.downstairs_thermostat"
+                                    },
+                                    "data": {
+                                        "fan_mode": "auto"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "master_bedroom_passive"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.windows_assumed_open",
+                            "state": "off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "fan.turn_on",
+                            "target": {
+                                "entity_id": [
+                                    "fan.caleb_office_ceiling",
+                                    "fan.tia_office_ceiling_fan",
+                                    "fan.fan"
+                                ]
+                            },
+                            "data": {
+                                "percentage": 33
+                            }
+                        },
+                        {
+                            "action": "climate.set_fan_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "fan_mode": "on"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "windows_open"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "and",
+                            "conditions": [
+                                {
+                                    "condition": "numeric_state",
+                                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                    "above": 68
+                                },
+                                {
+                                    "condition": "numeric_state",
+                                    "entity_id": "sensor.meter_pro_2689_temperature",
+                                    "above": 68
+                                }
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "fan.turn_on",
+                            "target": {
+                                "entity_id": [
+                                    "fan.caleb_office_ceiling",
+                                    "fan.tia_office_ceiling_fan"
+                                ]
+                            },
+                            "data": {
+                                "percentage": 25
+                            }
+                        },
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "off"
+                            }
+                        },
+                        {
+                            "action": "climate.set_fan_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "fan_mode": "on"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": [
+                                "passive",
+                                "passive_humid"
+                            ]
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.windows_assumed_open",
+                            "state": "off"
+                        },
+                        {
+                            "condition": "numeric_state",
+                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                            "below": 74
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "fan.turn_on",
+                            "target": {
+                                "entity_id": [
+                                    "fan.caleb_office_ceiling",
+                                    "fan.tia_office_ceiling_fan",
+                                    "fan.fan"
+                                ]
+                            },
+                            "data": {
+                                "percentage": 33
+                            }
+                        },
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "off"
+                            }
+                        },
+                        {
+                            "action": "climate.set_fan_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "fan_mode": "on"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": [
+                                "escalate_solar",
+                                "escalate_standard"
+                            ]
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.windows_assumed_open",
+                            "state": "off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "fan.turn_on",
+                            "target": {
+                                "entity_id": [
+                                    "fan.caleb_office_ceiling",
+                                    "fan.tia_office_ceiling_fan",
+                                    "fan.fan"
+                                ]
+                            },
+                            "data": {
+                                "percentage": 50
+                            }
+                        },
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "cool"
+                            }
+                        },
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 68
+                            }
+                        },
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC",
+                                "message": "Passive cooling failed \u2014 AC activated at 68\u00b0F."
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "emergency"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": [
+                                "summer",
+                                "shoulder"
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "fan.turn_on",
+                            "target": {
+                                "entity_id": [
+                                    "fan.caleb_office_ceiling",
+                                    "fan.tia_office_ceiling_fan",
+                                    "fan.fan"
+                                ]
+                            },
+                            "data": {
+                                "percentage": 100
+                            }
+                        },
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "cool"
+                            }
+                        },
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 68
+                            }
+                        },
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC \ud83d\udea8",
+                                "message": "Emergency cooling \u2014 office \u2265 78\u00b0F. AC activated."
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "restart"
+}
