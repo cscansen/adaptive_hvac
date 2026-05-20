@@ -1,0 +1,51 @@
+{
+  "id": "hvac_season_transition",
+  "alias": "HVAC Season Transition",
+  "description": "Sets season on 1st of Apr/May/Oct. Sets thermostat mode, resets setpoint, clears flags.",
+  "mode": "single",
+  "triggers": [
+    {"trigger": "time", "at": "00:01:00"}
+  ],
+  "conditions": [
+    {"condition": "template", "value_template": "{{ now().day == 1 and now().month in [4, 5, 10] }}"}
+  ],
+  "actions": [
+    {
+      "choose": [
+        {
+          "conditions": [{"condition": "template", "value_template": "{{ now().month == 5 }}"}],
+          "sequence": [
+            {"action": "input_select.select_option", "target": {"entity_id": "input_select.hvac_season"}, "data": {"option": "summer"}},
+            {"action": "climate.set_hvac_mode", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"hvac_mode": "off"}},
+            {"action": "climate.set_fan_mode", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"fan_mode": "auto"}},
+            {"action": "fan.turn_off", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}},
+            {"action": "input_boolean.turn_off", "target": {"entity_id": ["input_boolean.hvac_managed_heating", "input_boolean.hvac_manual_override"]}},
+            {"action": "notify.mobile_app_calebs_iphone", "data": {"title": "HVAC", "message": "Season → Summer. Passive cooling active."}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "template", "value_template": "{{ now().month == 10 }}"}],
+          "sequence": [
+            {"action": "input_select.select_option", "target": {"entity_id": "input_select.hvac_season"}, "data": {"option": "winter"}},
+            {"action": "climate.set_hvac_mode", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"hvac_mode": "heat"}},
+            {"action": "climate.set_temperature", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"temperature": 68}},
+            {"action": "fan.turn_off", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}},
+            {"action": "input_boolean.turn_off", "target": {"entity_id": ["input_boolean.hvac_managed_heating", "input_boolean.hvac_manual_override"]}},
+            {"action": "notify.mobile_app_calebs_iphone", "data": {"title": "HVAC", "message": "Season → Winter. Heat at 68°F."}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "template", "value_template": "{{ now().month == 4 }}"}],
+          "sequence": [
+            {"action": "input_select.select_option", "target": {"entity_id": "input_select.hvac_season"}, "data": {"option": "shoulder"}},
+            {"action": "climate.set_hvac_mode", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"hvac_mode": "off"}},
+            {"action": "climate.set_fan_mode", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"fan_mode": "auto"}},
+            {"action": "fan.turn_off", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}},
+            {"action": "input_boolean.turn_off", "target": {"entity_id": ["input_boolean.hvac_managed_heating", "input_boolean.hvac_manual_override"]}},
+            {"action": "notify.mobile_app_calebs_iphone", "data": {"title": "HVAC", "message": "Season → Shoulder (April). Passive only, no AC."}}
+          ]
+        }
+      ]
+    }
+  ]
+}

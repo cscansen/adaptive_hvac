@@ -1,0 +1,35 @@
+{
+  "id": "garage_atv_zone_restore",
+  "alias": "Garage ATV - Zone Restore After 5min Idle",
+  "description": "Re-enable whole-house follow 5 minutes after Apple TV goes idle, but only if still occupied. If garage is empty, garage_empty_audio_off handles cleanup instead.",
+  "trigger": [
+    {
+      "platform": "state",
+      "entity_id": "media_player.garage_apple_tv",
+      "to": ["idle", "off"],
+      "for": "00:05:00"
+    }
+  ],
+  "condition": [
+    {
+      "condition": "state",
+      "entity_id": "binary_sensor.garage_occupied",
+      "state": "on"
+    }
+  ],
+  "action": [
+    {
+      "service": "switch.turn_off",
+      "target": {
+        "entity_id": "switch.extra1"
+      }
+    },
+    {
+      "service": "input_boolean.turn_on",
+      "target": {
+        "entity_id": "input_boolean.auto_audio_garage"
+      }
+    }
+  ],
+  "mode": "single"
+}

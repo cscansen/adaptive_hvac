@@ -1,0 +1,20 @@
+{
+  "id": "hvac_living_room_fan_comfort",
+  "alias": "HVAC Living Room Fan Comfort",
+  "description": "Living room fan must never run when occupied. If presence detected for 5+ min, turn fan off. HVAC automations don't touch this fan, but this is the safety net.",
+  "mode": "single",
+  "triggers": [
+    {
+      "trigger": "state",
+      "entity_id": "binary_sensor.main_floor_common_area_occupied",
+      "to": "on",
+      "for": "00:05:00"
+    }
+  ],
+  "conditions": [
+    {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_living_room", "state": "off"}
+  ],
+  "actions": [
+    {"action": "fan.turn_off", "target": {"entity_id": "fan.living_room_ceiling_fan"}}
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "id": "drip_garden_watering",
+  "alias": "Drip / Garden Watering",
+  "description": "Mixed drip zone (trees, shrubs, flowers, vegetables). Base 2x/week (Tue+Fri). Adds Mon+Thu when forecast high >85F. Skips on forecast rain >=0.15in or when mode is winter/off. Duration 45min base / 30min supplemental, adjusted for heat and humidity.",
+  "triggers": [
+    {
+      "trigger": "time",
+      "at": "06:00:00"
+    }
+  ],
+  "conditions": [
+    {
+      "condition": "template",
+      "alias": "Not in winter or off mode",
+      "value_template": "{{ states('input_select.irrigation_mode') not in ['winter', 'off'] }}"
+    },
+    {
+      "condition": "template",
+      "alias": "Only run on scheduled days (Tue/Fri always; Mon/Thu conditionally — checked later)",
+      "value_template": "{{ now().weekday() in [0, 1, 3, 4] }}"
+    }
+  ],
+  "actions": [
+    {
+      "action": "weather.get_forecasts",
+      "data": {
+        "type": "daily",
+        "entity_id": "weather.home"
+      },
+      "response_variable": "wx_forecast"
+    },
+    {
+      "variables": {
+        "today_precip": "{{ wx_forecast['weather.home']['forecast'][0]['precipitation'] | float(0) }}",
+        "today_high": "{{ wx_forecast['weather.home']['forecast'][0]['temperature'] | float(70) }}",
+        "current_humidity": "{{ state_attr('weather.home', 'humidity') | float(50) }}",
+        "dow": "{{ now().weekday() }}",
+        "is_base_day": "{{ now().weekday() in [1, 4] }}",
+        "is_hot_extra_day": "{{ now().weekday() in [0, 3] }}"
+      }
+    },
+    {
+      "alias": "Skip Mon/Thu unless forecast high > 85F",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ is_hot_extra_day and today_high | float <= 85 }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Drip/garden watering skipped — Mon/Thu extra day not triggered (forecast high {{ today_high }}°F, needs >85°F)",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "drip_watering_session",
+            "title": "Drip / Garden — Skipped",
+            "message": "Today is a Mon/Thu bonus day, but the forecast high is only {{ today_high | round(0) }}°F — not hot enough to add an extra watering (needs >85°F). Next scheduled run is Tue or Fri."
+          }
+        },
+        {
+          "stop": "Mon/Thu extra day not needed"
+        }
+      ]
+    },
+    {
+      "alias": "Skip if significant rain forecast",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ today_precip | float >= 0.15 }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Drip/garden watering skipped — rain forecast ({{ today_precip }}in)",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "drip_watering_session",
+            "title": "Drip / Garden — Skipped",
+            "message": "Today's drip watering was skipped — rain is in the forecast ({{ today_precip }}in). The garden won't need it."
+          }
+        },
+        {
+          "stop": "Rain forecast"
+        }
+      ]
+    },
+    {
+      "variables": {
+        "base_minutes": "{{ 45 if is_base_day else 30 }}",
+        "heat_add": "{{ 5 if today_high | float > 95 else 0 }}",
+        "humid_add": "{{ 5 if current_humidity | float < 35 else 0 }}",
+        "run_minutes": "{{ [[20, base_minutes | int + heat_add | int + humid_add | int] | max, 60] | min }}",
+        "cycle_type": "{{ 'base (Tue/Fri)' if is_base_day else 'hot supplemental (Mon/Thu)' }}"
+      }
+    },
+    {
+      "action": "system_log.write",
+      "data": {
+        "message": "Drip/garden watering: {{ cycle_type }}, {{ run_minutes }} min | forecast: {{ states('weather.home') }} {{ today_high }}°F precip={{ today_precip }}in humidity={{ current_humidity }}%",
+        "level": "info"
+      }
+    },
+    {
+      "action": "switch.turn_on",
+      "target": {
+        "entity_id": "switch.yardian_controller_drip_garden"
+      }
+    },
+    {
+      "delay": {
+        "minutes": "{{ run_minutes | int }}"
+      }
+    },
+    {
+      "action": "switch.turn_off",
+      "target": {
+        "entity_id": "switch.yardian_controller_drip_garden"
+      }
+    },
+    {
+      "action": "persistent_notification.create",
+      "data": {
+        "notification_id": "drip_watering_session",
+        "title": "Drip / Garden — Watered",
+        "message": "{{ cycle_type | capitalize }} run complete: {{ run_minutes }} minutes. Forecast: {{ today_high | round(0) }}°F, {{ today_precip }}in rain expected."
+      }
+    }
+  ],
+  "mode": "single"
+}

@@ -1,0 +1,192 @@
+{
+    "id": "hvac_sensor_failsafe",
+    "alias": "HVAC Sensor Failsafe",
+    "description": "Notifies when the upstairs office sensor goes unavailable or recovers (gates automations). Also monitors master bedroom sensor (advisory only).",
+    "triggers": [
+        {
+            "trigger": "state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "to": [
+                "unavailable",
+                "unknown"
+            ],
+            "for": "00:02:00",
+            "id": "lost"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "from": [
+                "unavailable",
+                "unknown"
+            ],
+            "id": "recovered"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "sensor.meter_pro_2689_temperature",
+            "to": [
+                "unavailable",
+                "unknown"
+            ],
+            "for": "00:02:00",
+            "id": "master_bedroom_lost"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "sensor.meter_pro_2689_temperature",
+            "from": [
+                "unavailable",
+                "unknown"
+            ],
+            "id": "master_bedroom_recovered"
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "lost"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC \u26a0\ufe0f",
+                                "message": "Office sensor unavailable \u2014 HVAC automation paused. Check hygrometer."
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "recovered"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC",
+                                "message": "Office sensor recovered \u2014 HVAC automation resumed."
+                            }
+                        },
+                        {
+                            "delay": "00:00:10"
+                        },
+                        {
+                            "choose": [
+                                {
+                                    "conditions": [
+                                        {
+                                            "condition": "numeric_state",
+                                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                            "above": 73.9
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "input_select.hvac_season",
+                                            "state": "summer"
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.windows_assumed_open",
+                                            "state": "off"
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "input_boolean.hvac_manual_override",
+                                            "state": "off"
+                                        }
+                                    ],
+                                    "sequence": [
+                                        {
+                                            "action": "automation.trigger",
+                                            "target": {
+                                                "entity_id": "automation.hvac_cooling"
+                                            },
+                                            "data": {
+                                                "skip_condition": false
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    "conditions": [
+                                        {
+                                            "condition": "numeric_state",
+                                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                            "below": 65
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "input_select.hvac_season",
+                                            "state": "winter"
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "input_boolean.hvac_manual_override",
+                                            "state": "off"
+                                        }
+                                    ],
+                                    "sequence": [
+                                        {
+                                            "action": "automation.trigger",
+                                            "target": {
+                                                "entity_id": "automation.hvac_heating_normal"
+                                            },
+                                            "data": {
+                                                "skip_condition": false
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "master_bedroom_lost"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC ⚠️",
+                                "message": "Master bedroom sensor unavailable — bedroom heating trigger paused."
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "master_bedroom_recovered"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC",
+                                "message": "Master bedroom sensor recovered."
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "single"
+}

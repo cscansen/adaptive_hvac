@@ -1,0 +1,1031 @@
+{
+  "id": "germination_watering_program",
+  "alias": "Germination Watering Program",
+  "description": "28-day seedling watering program. Uses soil sensors, weather forecast, and wind to decide per-zone watering. Sensor staleness >4h triggers survival fallback. Skips zones with motion detected (east/middle/west); retries after other zones complete, waits 5min if still occupied. Auto-transitions to summer mode on day 28.",
+  "triggers": [
+    {
+      "trigger": "time",
+      "at": "06:00:00",
+      "id": "cycle_1"
+    },
+    {
+      "trigger": "time",
+      "at": "10:00:00",
+      "id": "cycle_2"
+    },
+    {
+      "trigger": "time",
+      "at": "14:00:00",
+      "id": "cycle_3"
+    },
+    {
+      "trigger": "time",
+      "at": "18:00:00",
+      "id": "cycle_4"
+    }
+  ],
+  "conditions": [
+    {
+      "condition": "state",
+      "entity_id": "input_select.irrigation_mode",
+      "state": "seedling"
+    },
+    {
+      "condition": "template",
+      "alias": "Within 28-day program window",
+      "value_template": "{{ (now().date() - as_datetime(states('input_datetime.seedling_start_date')).date()).days < 28 }}"
+    }
+  ],
+  "actions": [
+    {
+      "action": "weather.get_forecasts",
+      "data": {
+        "type": "daily",
+        "entity_id": "weather.home"
+      },
+      "response_variable": "wx_forecast"
+    },
+    {
+      "variables": {
+        "start_date": "{{ states('input_datetime.seedling_start_date') }}",
+        "day_num": "{{ (now().date() - as_datetime(states('input_datetime.seedling_start_date')).date()).days + 1 }}",
+        "base_minutes": "{{ 6 if (now().date() - as_datetime(states('input_datetime.seedling_start_date')).date()).days < 14 else 10 }}",
+        "phase2_skip": "{{ trigger.id == 'cycle_4' and (now().date() - as_datetime(states('input_datetime.seedling_start_date')).date()).days >= 14 }}",
+        "today_precip": "{{ wx_forecast['weather.home']['forecast'][0]['precipitation'] | float(0) }}",
+        "today_high": "{{ wx_forecast['weather.home']['forecast'][0]['temperature'] | float(70) }}",
+        "current_wind": "{{ state_attr('weather.home', 'wind_speed') | float(0) }}",
+        "current_humidity": "{{ state_attr('weather.home', 'humidity') | float(50) }}",
+        "soil_east_raw": "{{ states('sensor.east_yard_soil_sensor_humidity') }}",
+        "soil_west_raw": "{{ states('sensor.back_yard_soil_sensor_humidity') }}",
+        "soil_front_raw": "{{ states('sensor.front_yard_soil_sensor_humidity') }}",
+        "east_ok": "{{ states('sensor.east_yard_soil_sensor_humidity') not in ['unavailable', 'unknown', 'none'] and (now() - states.sensor.east_yard_soil_sensor_humidity.last_updated).total_seconds() < 28800 }}",
+        "west_ok": "{{ states('sensor.back_yard_soil_sensor_humidity') not in ['unavailable', 'unknown', 'none'] and (now() - states.sensor.back_yard_soil_sensor_humidity.last_updated).total_seconds() < 28800 }}",
+        "front_ok": "{{ states('sensor.front_yard_soil_sensor_humidity') not in ['unavailable', 'unknown', 'none'] and (now() - states.sensor.front_yard_soil_sensor_humidity.last_updated).total_seconds() < 28800 }}",
+        "soil_east": "{{ states('sensor.east_yard_soil_sensor_humidity') | float(50) }}",
+        "soil_west": "{{ states('sensor.back_yard_soil_sensor_humidity') | float(50) }}",
+        "soil_front": "{{ states('sensor.front_yard_soil_sensor_humidity') | float(50) }}",
+        "avg_soil": "{{ (states('sensor.east_yard_soil_sensor_humidity') | float(50) + states('sensor.back_yard_soil_sensor_humidity') | float(50) + states('sensor.front_yard_soil_sensor_humidity') | float(50)) / 3 }}"
+      }
+    },
+    {
+      "alias": "Skip if currently raining",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ states('weather.home') in ['rainy', 'pouring', 'lightning-rainy', 'snowy-rainy'] }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination watering skipped (cycle {{ trigger.id }}) — currently raining ({{ states('weather.home') }})",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_session",
+            "title": "Seedling Watering — Skipped",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: cycle skipped — it's currently raining ({{ states('weather.home') }})."
+          }
+        },
+        {
+          "stop": "Currently raining"
+        }
+      ]
+    },
+    {
+      "alias": "Skip if significant rain forecast AND soil already adequate",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ today_precip >= 0.15 and avg_soil > 88 }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination watering skipped (cycle {{ trigger.id }}) — rain forecast ({{ today_precip }}in) with adequate soil (avg {{ avg_soil | round(1) }}%)",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_session",
+            "title": "Seedling Watering — Skipped",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: cycle skipped — rain is in the forecast ({{ today_precip }}in) and soil is already moist enough (average {{ avg_soil | round(0) }}%)."
+          }
+        },
+        {
+          "stop": "Rain forecast with adequate soil"
+        }
+      ]
+    },
+    {
+      "alias": "Skip if wind too high for effective watering",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ current_wind >= 25 }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination watering skipped (cycle {{ trigger.id }}) — wind too high at {{ current_wind }}mph",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_session",
+            "title": "Seedling Watering — Skipped",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: cycle skipped — it's too windy right now ({{ current_wind | round(0) }}mph). Effective watering needs winds below 25mph."
+          }
+        },
+        {
+          "stop": "Wind too high"
+        }
+      ]
+    },
+    {
+      "alias": "Skip 4th cycle in phase 2",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ phase2_skip }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination: skipping 4th cycle (phase 2, day {{ day_num }})",
+            "level": "info"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_session",
+            "title": "Seedling Watering — 4th Cycle Skipped",
+            "message": "Day {{ day_num }}/28: the 4th daily cycle is skipped during weeks 2–4 — seedlings only need 3 waterings per day at this stage."
+          }
+        },
+        {
+          "stop": "Phase 2 — 4th cycle skipped"
+        }
+      ]
+    },
+    {
+      "variables": {
+        "temp_add": "{{ 4 if today_high > 90 else (2 if today_high > 80 else 0) }}",
+        "wind_add": "{{ 2 if current_wind > 15 else 0 }}",
+        "humid_add": "{{ 2 if current_humidity < 35 else 0 }}",
+        "east_motion": "{{ is_state('binary_sensor.yard_east_motion', 'on') }}",
+        "middle_motion": "{{ is_state('binary_sensor.yard_gazebo_slider_motion', 'on') }}",
+        "west_motion": "{{ is_state('binary_sensor.yard_west_motion', 'on') }}"
+      }
+    },
+    {
+      "action": "system_log.write",
+      "data": {
+        "message": "Germination watering: day {{ day_num }}/28, base {{ base_minutes }}min | forecast: {{ states('weather.home') }} {{ today_high }}°F precip={{ today_precip }}in wind={{ current_wind }}mph | soil E={{ soil_east_raw }}% W={{ soil_west_raw }}% F={{ soil_front_raw }}% | sensors ok: E={{ east_ok }} W={{ west_ok }} F={{ front_ok }} | motion E={{ east_motion }} M={{ middle_motion }} W={{ west_motion }}",
+        "level": "info"
+      }
+    },
+    {
+      "alias": "East zone",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ east_ok }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ soil_east < 93 }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ not east_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "variables": {
+            "soil_reduce_east": "{{ 2 if soil_east > 90 else (1 if soil_east > 86 else 0) }}",
+            "run_min_east": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_east | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_east"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_east | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_east"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_east",
+            "title": "East Yard (Seedling) — Watered",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: watered for {{ run_min_east }} minutes. Soil was at {{ soil_east | round(0) }}%."
+          }
+        }
+      ],
+      "else": [
+        {
+          "if": [
+            {
+              "condition": "template",
+              "value_template": "{{ east_motion and east_ok and soil_east < 93 }}"
+            }
+          ],
+          "then": [
+            {
+              "action": "system_log.write",
+              "data": {
+                "message": "Germination: east zone deferred — motion detected, will retry after other zones",
+                "level": "info"
+              }
+            },
+            {
+              "action": "persistent_notification.create",
+              "data": {
+                "notification_id": "germination_watering_east",
+                "title": "East Yard (Seedling) — Delayed",
+                "message": "Day {{ day_num }}/28, {{ trigger.id }}: someone is in the east yard. Watering will happen after other zones finish."
+              }
+            }
+          ],
+          "else": [
+            {
+              "if": [
+                {
+                  "condition": "template",
+                  "value_template": "{{ not east_ok and not east_motion }}"
+                }
+              ],
+              "then": [
+                {
+                  "action": "switch.turn_on",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_east"
+                  }
+                },
+                {
+                  "delay": {
+                    "minutes": 4
+                  }
+                },
+                {
+                  "action": "switch.turn_off",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_east"
+                  }
+                },
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: FALLBACK east zone — sensor unavailable or stale (last raw={{ soil_east_raw }}), ran 4 min survival dose",
+                    "level": "warning"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_east",
+                    "title": "East Yard (Seedling) — Sensor Problem",
+                    "message": "Day {{ day_num }}/28: soil sensor unavailable or stale (last reading: {{ soil_east_raw }}%). Ran a 4-minute safety watering. Check the sensor."
+                  }
+                }
+              ],
+              "else": [
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: skipping east zone — soil {{ soil_east }}% >= 93%",
+                    "level": "info"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_east",
+                    "title": "East Yard (Seedling) — Skipped",
+                    "message": "Day {{ day_num }}/28, {{ trigger.id }}: soil is already at {{ soil_east | round(0) }}% — above the 93% seedling threshold. No watering needed."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "Middle zone (avg of east + west sensors)",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ east_ok and west_ok }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ (soil_east + soil_west) / 2 < 93 }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ not middle_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "variables": {
+            "soil_middle": "{{ (soil_east + soil_west) / 2 }}",
+            "soil_reduce_middle": "{{ 2 if soil_middle > 90 else (1 if soil_middle > 86 else 0) }}",
+            "run_min_middle": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_middle | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_middle"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_middle | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_middle"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_middle",
+            "title": "Middle Yard (Seedling) — Watered",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: watered for {{ run_min_middle }} minutes. Soil average was {{ ((soil_east + soil_west) / 2) | round(0) }}%."
+          }
+        }
+      ],
+      "else": [
+        {
+          "if": [
+            {
+              "condition": "template",
+              "value_template": "{{ middle_motion and east_ok and west_ok and (soil_east + soil_west) / 2 < 93 }}"
+            }
+          ],
+          "then": [
+            {
+              "action": "system_log.write",
+              "data": {
+                "message": "Germination: middle zone deferred — motion detected, will retry after other zones",
+                "level": "info"
+              }
+            },
+            {
+              "action": "persistent_notification.create",
+              "data": {
+                "notification_id": "germination_watering_middle",
+                "title": "Middle Yard (Seedling) — Delayed",
+                "message": "Day {{ day_num }}/28, {{ trigger.id }}: someone is in the middle yard. Watering will happen after other zones finish."
+              }
+            }
+          ],
+          "else": [
+            {
+              "if": [
+                {
+                  "condition": "template",
+                  "value_template": "{{ (not east_ok or not west_ok) and not middle_motion }}"
+                }
+              ],
+              "then": [
+                {
+                  "action": "switch.turn_on",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_middle"
+                  }
+                },
+                {
+                  "delay": {
+                    "minutes": 4
+                  }
+                },
+                {
+                  "action": "switch.turn_off",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_middle"
+                  }
+                },
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: FALLBACK middle zone — sensor(s) unavailable or stale, ran 4 min survival dose",
+                    "level": "warning"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_middle",
+                    "title": "Middle Yard (Seedling) — Sensor Problem",
+                    "message": "Day {{ day_num }}/28: one or both soil sensors are unavailable or stale. Ran a 4-minute safety watering. Check the sensors."
+                  }
+                }
+              ],
+              "else": [
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: skipping middle zone — avg soil {{ ((soil_east + soil_west) / 2) | round(1) }}% >= 93%",
+                    "level": "info"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_middle",
+                    "title": "Middle Yard (Seedling) — Skipped",
+                    "message": "Day {{ day_num }}/28, {{ trigger.id }}: soil average is {{ ((soil_east + soil_west) / 2) | round(0) }}% — above the 93% seedling threshold. No watering needed."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "West zone",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ west_ok }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ soil_west < 93 }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ not west_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "variables": {
+            "soil_reduce_west": "{{ 2 if soil_west > 90 else (1 if soil_west > 86 else 0) }}",
+            "run_min_west": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_west | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_west"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_west | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_west"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_west",
+            "title": "West Yard (Seedling) — Watered",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: watered for {{ run_min_west }} minutes. Soil was at {{ soil_west | round(0) }}%."
+          }
+        }
+      ],
+      "else": [
+        {
+          "if": [
+            {
+              "condition": "template",
+              "value_template": "{{ west_motion and west_ok and soil_west < 93 }}"
+            }
+          ],
+          "then": [
+            {
+              "action": "system_log.write",
+              "data": {
+                "message": "Germination: west zone deferred — motion detected, will retry after other zones",
+                "level": "info"
+              }
+            },
+            {
+              "action": "persistent_notification.create",
+              "data": {
+                "notification_id": "germination_watering_west",
+                "title": "West Yard (Seedling) — Delayed",
+                "message": "Day {{ day_num }}/28, {{ trigger.id }}: someone is in the west yard. Watering will happen after other zones finish."
+              }
+            }
+          ],
+          "else": [
+            {
+              "if": [
+                {
+                  "condition": "template",
+                  "value_template": "{{ not west_ok and not west_motion }}"
+                }
+              ],
+              "then": [
+                {
+                  "action": "switch.turn_on",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_west"
+                  }
+                },
+                {
+                  "delay": {
+                    "minutes": 4
+                  }
+                },
+                {
+                  "action": "switch.turn_off",
+                  "target": {
+                    "entity_id": "switch.yardian_controller_yard_west"
+                  }
+                },
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: FALLBACK west zone — sensor unavailable or stale (last raw={{ soil_west_raw }}), ran 4 min survival dose",
+                    "level": "warning"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_west",
+                    "title": "West Yard (Seedling) — Sensor Problem",
+                    "message": "Day {{ day_num }}/28: soil sensor unavailable or stale (last reading: {{ soil_west_raw }}%). Ran a 4-minute safety watering. Check the sensor."
+                  }
+                }
+              ],
+              "else": [
+                {
+                  "action": "system_log.write",
+                  "data": {
+                    "message": "Germination: skipping west zone — soil {{ soil_west }}% >= 93%",
+                    "level": "info"
+                  }
+                },
+                {
+                  "action": "persistent_notification.create",
+                  "data": {
+                    "notification_id": "germination_watering_west",
+                    "title": "West Yard (Seedling) — Skipped",
+                    "message": "Day {{ day_num }}/28, {{ trigger.id }}: soil is already at {{ soil_west | round(0) }}% — above the 93% seedling threshold. No watering needed."
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "Front yard zone",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ front_ok }}"
+        },
+        {
+          "condition": "template",
+          "value_template": "{{ soil_front < 93 }}"
+        }
+      ],
+      "then": [
+        {
+          "variables": {
+            "soil_reduce_front": "{{ 2 if soil_front > 90 else (1 if soil_front > 86 else 0) }}",
+            "run_min_front": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_front | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_front_yard"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_front | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_front_yard"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_front",
+            "title": "Front Yard (Seedling) — Watered",
+            "message": "Day {{ day_num }}/28, {{ trigger.id }}: watered for {{ run_min_front }} minutes. Soil was at {{ soil_front | round(0) }}%."
+          }
+        }
+      ],
+      "else": [
+        {
+          "if": [
+            {
+              "condition": "template",
+              "value_template": "{{ not front_ok }}"
+            }
+          ],
+          "then": [
+            {
+              "action": "switch.turn_on",
+              "target": {
+                "entity_id": "switch.yardian_controller_front_yard"
+              }
+            },
+            {
+              "delay": {
+                "minutes": 4
+              }
+            },
+            {
+              "action": "switch.turn_off",
+              "target": {
+                "entity_id": "switch.yardian_controller_front_yard"
+              }
+            },
+            {
+              "action": "system_log.write",
+              "data": {
+                "message": "Germination: FALLBACK front zone — sensor unavailable or stale (last raw={{ soil_front_raw }}), ran 4 min survival dose",
+                "level": "warning"
+              }
+            },
+            {
+              "action": "persistent_notification.create",
+              "data": {
+                "notification_id": "germination_watering_front",
+                "title": "Front Yard (Seedling) — Sensor Problem",
+                "message": "Day {{ day_num }}/28: soil sensor unavailable or stale (last reading: {{ soil_front_raw }}%). Ran a 4-minute safety watering. Check the sensor."
+              }
+            }
+          ],
+          "else": [
+            {
+              "action": "system_log.write",
+              "data": {
+                "message": "Germination: skipping front yard zone — soil {{ soil_front }}% >= 93%",
+                "level": "info"
+              }
+            },
+            {
+              "action": "persistent_notification.create",
+              "data": {
+                "notification_id": "germination_watering_front",
+                "title": "Front Yard (Seedling) — Skipped",
+                "message": "Day {{ day_num }}/28, {{ trigger.id }}: soil is already at {{ soil_front | round(0) }}% — above the 93% seedling threshold. No watering needed."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "East zone retry (was deferred — person present at cycle start)",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ east_ok and soil_east < 93 and east_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "repeat": {
+            "while": [
+              {
+                "condition": "state",
+                "entity_id": "binary_sensor.yard_east_motion",
+                "state": "on"
+              }
+            ],
+            "sequence": [
+              {
+                "action": "system_log.write",
+                "data": {
+                  "message": "Germination: east retry — still occupied (attempt {{ repeat.index }}), waiting 5 min",
+                  "level": "info"
+                }
+              },
+              {
+                "action": "persistent_notification.create",
+                "data": {
+                  "notification_id": "germination_watering_east",
+                  "title": "East Yard (Seedling) — Still Waiting",
+                  "message": "East yard still occupied (check #{{ repeat.index }}). Will try again in 5 minutes."
+                }
+              },
+              {
+                "delay": {
+                  "minutes": 5
+                }
+              }
+            ]
+          }
+        },
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination: east retry — zone clear, watering now",
+            "level": "info"
+          }
+        },
+        {
+          "variables": {
+            "soil_reduce_east_r": "{{ 2 if soil_east > 90 else (1 if soil_east > 86 else 0) }}",
+            "run_min_east_r": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_east_r | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_east"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_east_r | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_east"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_east",
+            "title": "East Yard (Seedling) — Watered (after delay)",
+            "message": "Watered for {{ run_min_east_r }} minutes after waiting for the yard to clear."
+          }
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "Middle zone retry (was deferred — person present at cycle start)",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ east_ok and west_ok and (soil_east + soil_west) / 2 < 93 and middle_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "repeat": {
+            "while": [
+              {
+                "condition": "state",
+                "entity_id": "binary_sensor.yard_gazebo_slider_motion",
+                "state": "on"
+              }
+            ],
+            "sequence": [
+              {
+                "action": "system_log.write",
+                "data": {
+                  "message": "Germination: middle retry — still occupied (attempt {{ repeat.index }}), waiting 5 min",
+                  "level": "info"
+                }
+              },
+              {
+                "action": "persistent_notification.create",
+                "data": {
+                  "notification_id": "germination_watering_middle",
+                  "title": "Middle Yard (Seedling) — Still Waiting",
+                  "message": "Middle yard still occupied (check #{{ repeat.index }}). Will try again in 5 minutes."
+                }
+              },
+              {
+                "delay": {
+                  "minutes": 5
+                }
+              }
+            ]
+          }
+        },
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination: middle retry — zone clear, watering now",
+            "level": "info"
+          }
+        },
+        {
+          "variables": {
+            "soil_middle_r": "{{ (soil_east + soil_west) / 2 }}",
+            "soil_reduce_middle_r": "{{ 2 if soil_middle_r > 90 else (1 if soil_middle_r > 86 else 0) }}",
+            "run_min_middle_r": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_middle_r | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_middle"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_middle_r | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_middle"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_middle",
+            "title": "Middle Yard (Seedling) — Watered (after delay)",
+            "message": "Watered for {{ run_min_middle_r }} minutes after waiting for the yard to clear."
+          }
+        }
+      ]
+    },
+    {
+      "delay": {
+        "seconds": 15
+      }
+    },
+    {
+      "alias": "West zone retry (was deferred — person present at cycle start)",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ west_ok and soil_west < 93 and west_motion }}"
+        }
+      ],
+      "then": [
+        {
+          "repeat": {
+            "while": [
+              {
+                "condition": "state",
+                "entity_id": "binary_sensor.yard_west_motion",
+                "state": "on"
+              }
+            ],
+            "sequence": [
+              {
+                "action": "system_log.write",
+                "data": {
+                  "message": "Germination: west retry — still occupied (attempt {{ repeat.index }}), waiting 5 min",
+                  "level": "info"
+                }
+              },
+              {
+                "action": "persistent_notification.create",
+                "data": {
+                  "notification_id": "germination_watering_west",
+                  "title": "West Yard (Seedling) — Still Waiting",
+                  "message": "West yard still occupied (check #{{ repeat.index }}). Will try again in 5 minutes."
+                }
+              },
+              {
+                "delay": {
+                  "minutes": 5
+                }
+              }
+            ]
+          }
+        },
+        {
+          "action": "system_log.write",
+          "data": {
+            "message": "Germination: west retry — zone clear, watering now",
+            "level": "info"
+          }
+        },
+        {
+          "variables": {
+            "soil_reduce_west_r": "{{ 2 if soil_west > 90 else (1 if soil_west > 86 else 0) }}",
+            "run_min_west_r": "{{ [[3, base_minutes | int + temp_add | int + wind_add | int + humid_add | int - soil_reduce_west_r | int] | max, 15] | min }}"
+          }
+        },
+        {
+          "action": "switch.turn_on",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_west"
+          }
+        },
+        {
+          "delay": {
+            "minutes": "{{ run_min_west_r | int }}"
+          }
+        },
+        {
+          "action": "switch.turn_off",
+          "target": {
+            "entity_id": "switch.yardian_controller_yard_west"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "notification_id": "germination_watering_west",
+            "title": "West Yard (Seedling) — Watered (after delay)",
+            "message": "Watered for {{ run_min_west_r }} minutes after waiting for the yard to clear."
+          }
+        }
+      ]
+    },
+    {
+      "alias": "Auto-transition to summer on day 28",
+      "if": [
+        {
+          "condition": "template",
+          "value_template": "{{ (now().date() - as_datetime(states('input_datetime.seedling_start_date')).date()).days >= 27 }}"
+        }
+      ],
+      "then": [
+        {
+          "action": "input_select.select_option",
+          "target": {
+            "entity_id": "input_select.irrigation_mode"
+          },
+          "data": {
+            "option": "summer"
+          }
+        },
+        {
+          "action": "persistent_notification.create",
+          "data": {
+            "title": "Seedling Program Complete",
+            "message": "28-day watering program done. Automatically switched to Summer irrigation mode."
+          }
+        }
+      ]
+    }
+  ],
+  "mode": "single"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "audio_zone_second_floor_atv_off",
+  "alias": "Audio Zone - Second Floor Off (Tia or Family Room ATV Playing)",
+  "description": "Drop second floor zone from house follow and turn it off when Tia's or Family Room ATV starts playing.",
+  "trigger": [
+    {
+      "platform": "state",
+      "entity_id": [
+        "media_player.tias_office_apple_tv",
+        "media_player.family_room_apple_tv"
+      ],
+      "to": "playing"
+    }
+  ],
+  "action": [
+    {
+      "service": "input_boolean.turn_off",
+      "target": {
+        "entity_id": "input_boolean.auto_audio_second_floor"
+      }
+    },
+    {
+      "service": "media_player.turn_off",
+      "target": {
+        "entity_id": "media_player.second_floor"
+      }
+    }
+  ],
+  "mode": "single"
+}

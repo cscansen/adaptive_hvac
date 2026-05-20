@@ -1,0 +1,31 @@
+{
+  "id": "seedling_mode_start",
+  "alias": "Seedling Mode Start",
+  "description": "When irrigation mode is set to seedling, reset the 28-day start date to today.",
+  "triggers": [
+    {
+      "trigger": "state",
+      "entity_id": "input_select.irrigation_mode",
+      "to": "seedling"
+    }
+  ],
+  "conditions": [],
+  "actions": [
+    {
+      "action": "input_datetime.set_datetime",
+      "target": {
+        "entity_id": "input_datetime.seedling_start_date"
+      },
+      "data": {
+        "date": "{{ now().strftime('%Y-%m-%d') }}"
+      }
+    },
+    {
+      "action": "automation.turn_on",
+      "target": {
+        "entity_id": "automation.germination_watering_program"
+      }
+    }
+  ],
+  "mode": "single"
+}

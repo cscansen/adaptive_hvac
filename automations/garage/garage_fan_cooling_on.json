@@ -1,0 +1,45 @@
+{
+  "id": "garage_fan_cooling_on",
+  "alias": "Garage Fan - On (Presence 2min + Hot)",
+  "description": "Turn on garage fans when occupied 2+ min and it is hot — outdoor >80°F or garage interior >75°F. 2min threshold catches lifting/working sessions without triggering on walk-throughs.",
+  "trigger": [
+    {
+      "platform": "state",
+      "entity_id": "binary_sensor.garage_presence_sensor_presence",
+      "to": "on",
+      "for": "00:02:00"
+    }
+  ],
+  "condition": [
+    {
+      "condition": "or",
+      "conditions": [
+        {
+          "condition": "numeric_state",
+          "entity_id": "weather.forecast_home",
+          "attribute": "temperature",
+          "above": 80
+        },
+        {
+          "condition": "numeric_state",
+          "entity_id": "sensor.garage_hygrometer_temperature",
+          "above": 75
+        }
+      ]
+    },
+    {
+      "condition": "state",
+      "entity_id": "input_boolean.fan_user_claimed_garage",
+      "state": "off"
+    }
+  ],
+  "action": [
+    {
+      "service": "switch.turn_on",
+      "target": {
+        "entity_id": "switch.garage_fans"
+      }
+    }
+  ],
+  "mode": "single"
+}

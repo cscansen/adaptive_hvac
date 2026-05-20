@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(source ~/.secrets && curl -s http://ha.iot.scansenconsulting.com*)",
+      "Bash(source ~/.secrets && curl -s https://homeassistant.scansenconsulting.com*)",
+      "Bash(source ~/.secrets*)"
+    ]
+  }
+}
