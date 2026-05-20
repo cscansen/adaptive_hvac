@@ -1,0 +1,15 @@
+force_evaluate:
+  name: Force Evaluation
+  description: Force immediate HVAC decision cycle (don't wait for next poll)
+
+set_manual_override:
+  name: Set Manual Override
+  description: Enable or disable manual override (blocks all automation)
+  fields:
+    manual_override:
+      name: Manual Override
+      description: Enable (true) or disable (false) manual override
+      required: true
+      example: true
+      selector:
+        boolean:
