@@ -1,0 +1,173 @@
+{
+  "id": "outdoor_gazebo_zone_yard_person_presence",
+  "alias": "Speaker Zones - Outdoor Gazebo (Yard Person Presence)",
+  "description": "Activates the Gazebo audio zone when a person is detected by the Yard-Gazebo/Slider camera AND audio is actively playing. Deactivates after 10 min of no person detected or 5 min of no audio. Volume is managed by the Volume Policy automation.",
+  "triggers": [
+    {
+      "id": "person_on",
+      "trigger": "state",
+      "entity_id": "binary_sensor.yard_gazebo_slider_person_detected",
+      "to": "on"
+    },
+    {
+      "id": "person_off",
+      "trigger": "state",
+      "entity_id": "binary_sensor.yard_gazebo_slider_person_detected",
+      "to": "off",
+      "for": "00:10:00"
+    },
+    {
+      "id": "airplay_state",
+      "trigger": "state",
+      "entity_id": "media_player.airplay_downstairs"
+    },
+    {
+      "id": "lr_atv_state",
+      "trigger": "state",
+      "entity_id": "media_player.living_room_apple_tv"
+    },
+    {
+      "id": "follow_toggle",
+      "trigger": "state",
+      "entity_id": "input_boolean.living_room_appl_tv_audio_follow_me_mode"
+    },
+    {
+      "id": "no_target",
+      "trigger": "template",
+      "value_template": "{% set follow = is_state('input_boolean.living_room_appl_tv_audio_follow_me_mode','on') %} {% set air_state = states('media_player.airplay_downstairs') %} {% set lr_state = states('media_player.living_room_apple_tv') %} {% set air_playing = air_state == 'playing' %} {% set lr_playing = lr_state == 'playing' %} {{ (not air_playing) and (not (follow and lr_playing)) }}\n",
+      "for": "00:05:00"
+    }
+  ],
+  "variables": {
+    "follow_me": "input_boolean.living_room_appl_tv_audio_follow_me_mode",
+    "airplay_entity": "media_player.airplay_downstairs",
+    "living_room_atv": "media_player.living_room_apple_tv",
+    "source_airplay": "AirPlay",
+    "source_appletv": "Apple TV",
+    "person_sensor": "binary_sensor.yard_gazebo_slider_person_detected",
+    "gazebo_zone": "media_player.gazebo",
+    "gazebo_flag": "input_boolean.auto_audio_gazebo"
+  },
+  "actions": [
+    {
+      "variables": {
+        "air_state": "{{ states(airplay_entity) }}",
+        "lr_state": "{{ states(living_room_atv) }}",
+        "follow_me_on": "{{ is_state(follow_me, 'on') }}",
+        "air_playing": "{{ air_state == 'playing' }}",
+        "lr_playing": "{{ lr_state == 'playing' }}",
+        "routing_mode": "{% if follow_me_on and lr_playing %}\n  appletv\n{% elif air_playing %}\n  airplay\n{% else %}\n  none\n{% endif %}\n",
+        "desired_source": "{% if routing_mode == 'appletv' %}\n  {{ source_appletv }}\n{% else %}\n  {{ source_airplay }}\n{% endif %}\n",
+        "person_present": "{{ is_state(person_sensor, 'on') }}"
+      }
+    },
+    {
+      "choose": [
+        {
+          "conditions": [
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.id == 'person_off' }}"
+            },
+            {
+              "condition": "state",
+              "entity_id": "input_boolean.auto_audio_gazebo",
+              "state": "on"
+            }
+          ],
+          "sequence": [
+            {
+              "target": {
+                "entity_id": "media_player.gazebo"
+              },
+              "action": "media_player.turn_off"
+            },
+            {
+              "target": {
+                "entity_id": "input_boolean.auto_audio_gazebo"
+              },
+              "action": "input_boolean.turn_off"
+            }
+          ]
+        },
+        {
+          "conditions": [
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.id == 'no_target' }}"
+            },
+            {
+              "condition": "state",
+              "entity_id": "input_boolean.auto_audio_gazebo",
+              "state": "on"
+            }
+          ],
+          "sequence": [
+            {
+              "target": {
+                "entity_id": "media_player.gazebo"
+              },
+              "action": "media_player.turn_off"
+            },
+            {
+              "target": {
+                "entity_id": "input_boolean.auto_audio_gazebo"
+              },
+              "action": "input_boolean.turn_off"
+            }
+          ]
+        },
+        {
+          "conditions": [
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.id in ['person_on','airplay_state','lr_atv_state','follow_toggle'] and routing_mode != 'none' and person_present }}"
+            }
+          ],
+          "sequence": [
+            {
+              "variables": {
+                "prev": "{{ states(gazebo_zone) }}"
+              }
+            },
+            {
+              "target": {
+                "entity_id": "media_player.gazebo"
+              },
+              "action": "media_player.turn_on"
+            },
+            {
+              "target": {
+                "entity_id": "input_boolean.auto_audio_gazebo"
+              },
+              "action": "input_boolean.turn_on"
+            },
+            {
+              "choose": [
+                {
+                  "conditions": [
+                    {
+                      "condition": "template",
+                      "value_template": "{{ state_attr(gazebo_zone,'source') != desired_source }}"
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "data": {
+                        "entity_id": "media_player.gazebo",
+                        "source": "{{ desired_source }}"
+                      },
+                      "action": "media_player.select_source"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "mode": "queued",
+  "max": 20
+}

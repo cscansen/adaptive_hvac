@@ -1,0 +1,92 @@
+{
+  "id": "fan_lock_restore",
+  "alias": "Fan Lock - Restore When HVAC Overrides Claimed Fan",
+  "description": "When an automation (not user, not physical device) changes a claimed fan, restore it to the user's setting. Guards: user_id must be none (automation-driven) AND parent_id must be set (i.e. triggered by an automation, not a physical switch). Only fires if current state differs from claimed state to prevent loops.",
+  "trigger": [
+    {"platform": "state", "entity_id": "fan.tia_office_ceiling_fan", "id": "tia"},
+    {"platform": "state", "entity_id": "fan.caleb_office_ceiling", "id": "caleb"},
+    {"platform": "state", "entity_id": "fan.fan", "id": "family_room"},
+    {"platform": "state", "entity_id": "fan.master_ceiling_fan", "id": "master"},
+    {"platform": "state", "entity_id": "fan.living_room_ceiling_fan", "id": "living_room"}
+  ],
+  "condition": [
+    {
+      "condition": "template",
+      "value_template": "{{ trigger.to_state.context.user_id is none and trigger.to_state.context.parent_id is not none }}"
+    }
+  ],
+  "action": [
+    {
+      "choose": [
+        {
+          "conditions": [
+            {"condition": "trigger", "id": "tia"},
+            {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_tia_office", "state": "on"},
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.to_state.state != 'on' or trigger.to_state.attributes.get('percentage', 0) | int != states('input_number.fan_claimed_speed_tia_office') | int }}"
+            }
+          ],
+          "sequence": [
+            {"service": "fan.turn_on", "target": {"entity_id": "fan.tia_office_ceiling_fan"},
+             "data": {"percentage": "{{ states('input_number.fan_claimed_speed_tia_office') | int }}"}}
+          ]
+        },
+        {
+          "conditions": [
+            {"condition": "trigger", "id": "caleb"},
+            {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_caleb_office", "state": "on"},
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.to_state.state != 'on' or trigger.to_state.attributes.get('percentage', 0) | int != states('input_number.fan_claimed_speed_caleb_office') | int }}"
+            }
+          ],
+          "sequence": [
+            {"service": "fan.turn_on", "target": {"entity_id": "fan.caleb_office_ceiling"},
+             "data": {"percentage": "{{ states('input_number.fan_claimed_speed_caleb_office') | int }}"}}
+          ]
+        },
+        {
+          "conditions": [
+            {"condition": "trigger", "id": "family_room"},
+            {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_family_room", "state": "on"},
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.to_state.state != 'on' or trigger.to_state.attributes.get('percentage', 0) | int != states('input_number.fan_claimed_speed_family_room') | int }}"
+            }
+          ],
+          "sequence": [
+            {"service": "fan.turn_on", "target": {"entity_id": "fan.fan"},
+             "data": {"percentage": "{{ states('input_number.fan_claimed_speed_family_room') | int }}"}}
+          ]
+        },
+        {
+          "conditions": [
+            {"condition": "trigger", "id": "master"},
+            {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_master", "state": "on"},
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.to_state.state != 'on' or trigger.to_state.attributes.get('percentage', 0) | int != states('input_number.fan_claimed_speed_master') | int }}"
+            }
+          ],
+          "sequence": [
+            {"service": "fan.turn_on", "target": {"entity_id": "fan.master_ceiling_fan"},
+             "data": {"percentage": "{{ states('input_number.fan_claimed_speed_master') | int }}"}}
+          ]
+        },
+        {
+          "conditions": [
+            {"condition": "trigger", "id": "living_room"},
+            {"condition": "state", "entity_id": "input_boolean.fan_user_claimed_living_room", "state": "on"},
+            {"condition": "template", "value_template": "{{ trigger.to_state.state == 'off' }}"}
+          ],
+          "sequence": [
+            {"service": "fan.turn_on", "target": {"entity_id": "fan.living_room_ceiling_fan"}}
+          ]
+        }
+      ]
+    }
+  ],
+  "mode": "queued",
+  "max": 5
+}

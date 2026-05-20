@@ -142,50 +142,63 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ## Irrigation System
 
-### Mode selector
-`input_select.irrigation_mode` — options: `seedling`, `summer`, `winter`, `off`
+The active irrigation system is the **`adaptive_irrigation` custom HACS integration** (v0.6.9+), not the old HA automation-based programs. Source: `/mnt/nas/ai-workspace/homeassistant/adaptive_irrigation/`.
 
-### Zones (Yardian controller)
-| Zone | Switch | Soil sensor | Motion sensor |
-|------|--------|-------------|---------------|
-| East | `switch.yardian_controller_yard_east` | `sensor.east_yard_soil_sensor_humidity` | `binary_sensor.yard_east_motion` |
-| Middle | `switch.yardian_controller_yard_middle` | avg(east + west) | `binary_sensor.yard_gazebo_slider_motion` |
-| West | `switch.yardian_controller_yard_west` | `sensor.back_yard_soil_sensor_humidity` | `binary_sensor.yard_west_motion` |
-| Front | `switch.yardian_controller_front_yard` | `sensor.front_yard_soil_sensor_humidity` | — (no motion check) |
+### Config entries
+- **Configuration** entry (`entry_type: system`) — weather entity, watering window, water meter, daily budget. Has its own Configure button in Settings → Integrations.
+- One **zone** entry per zone (`entry_type: zone`).
 
-**Soil sensor calibration note (Third Reality sensors, 2026-05-17):** Sensors are accurate to within ~10% across their full range. Currently reading 97–99% (post-watering/saturated). Watering thresholds: normal 25%, seedling 35%.
+### Zones
+| Zone | Valve switch | Soil sensor | Motion sensor |
+|------|-------------|-------------|---------------|
+| Yard East | `switch.yardian_controller_yard_east` | `sensor.east_yard_soil_sensor_humidity` | `binary_sensor.yard_east_motion` |
+| Yard Middle | `switch.yardian_controller_yard_middle` | avg(east + west) | `binary_sensor.yard_gazebo_slider_motion` |
+| Yard West | `switch.yardian_controller_yard_west` | `sensor.back_yard_soil_sensor_humidity` | `binary_sensor.yard_west_motion` |
+| Front Yard | `switch.yardian_controller_front_yard` | `sensor.front_yard_soil_sensor_humidity` | — |
+| Drip Zone | `switch.yardian_controller_drip` | — (sensor-free, peer trend) | — |
 
-### Automations
-- `germination_watering_program` — 28-day seedling program; 4 cycles/day (6am/10am/2pm/6pm); soil threshold 93%; fallback 4min
-- `summer_watering_program` — daily at 5:30am; soil threshold 92%; fallback 6min
-- `drip_garden_watering` — drip zone (trees/shrubs/flowers/veg); Tue+Fri base; adds Mon+Thu when forecast >85°F
-- `seedling_mode_start` — resets `input_datetime.seedling_start_date` to today when mode set to seedling
+**Soil sensor calibration (Third Reality, 2026-05-17):** Accurate within ~10% across full range. Currently reading 97–99% (saturated post-watering). Thresholds: normal 25%, seedling 35%.
 
-### Motion-deferral pattern (germination + summer programs)
-- Motion sensors captured once at cycle start as variables (`east_motion`, `middle_motion`, `west_motion`)
-- Zone with motion active → skipped, logs "deferred"; other zones proceed
-- After all zones complete, retry blocks run for any deferred zone:
-  - `while` loop: check sensor → if still active, log attempt number + wait 5min, repeat
-  - Once clear → water normally using original soil reading
-- Front yard has no motion check
-- Fallback (stale sensor) is also suppressed when motion is active
+### Per-zone entities
+| Entity pattern | Description |
+|---------------|-------------|
+| `sensor.*_status` | Current decision: watering / skipped / idle / paused |
+| `sensor.*_moisture` | Live soil moisture % |
+| `sensor.*_moisture_trend` | %/hr trend (linear regression over 6h) |
+| `sensor.*_last_watered` | Timestamp of last valve close |
+| `sensor.*_et_today` | Evapotranspiration today |
+| `sensor.*_rain_forecast` | Forecast precip (inches) |
+| `sensor.*_wind_forecast` | Forecast wind (mph) |
+| `switch.*_auto_watering` | Enable/disable automated watering for zone |
+| `switch.*_seedling_mode` | Seedling mode toggle — uses seedling threshold instead of normal |
+| `number.*_soil_threshold` | Moisture % below which normal watering triggers (10–99%, default 25%) |
+| `number.*_seedling_threshold` | Moisture % below which seedling-mode watering triggers (10–99%, default 35%) |
+| `number.*_max_duration` | Max watering duration cap (minutes) |
+| `number.*_flow_rate` | Gallons/min for budget tracking |
+| `number.*_water_interval` | Base watering interval for sensor-free zones (days) |
+| `datetime.*_seedling_expires` | Auto-set 30 days after seedling mode first activates; expires mode automatically |
 
-### Dashboard notifications (persistent_notification)
-All three automations post plain-English `persistent_notification` cards to the dashboard. Each uses a stable `notification_id` so cards overwrite on every run rather than accumulating.
+### System entities (Configuration device)
+- `switch.adaptive_irrigation` — System Active (master pause)
+- `switch.adaptive_irrigation_water_restriction` — block all zones (drought/HOA)
+- `select.configuration_watering_window_start` / `_end` — daily watering window (AM/PM time labels)
+- `number.adaptive_irrigation_daily_water_budget` — daily gallon cap (0 = unlimited)
+- `sensor.adaptive_irrigation_daily_water_used` — gallons used today
+- `sensor.configuration_weather_source` — which weather entity is active
 
-| Event | notification_id | Example message |
-|-------|----------------|-----------------|
-| Whole session skipped (rain/wind/soil) | `summer_watering_session` / `germination_watering_session` / `drip_watering_session` | "Today's watering was skipped — it's too windy right now (28mph)." |
-| Germination phase-2 cycle-4 skipped | `germination_watering_session` | "The 4th daily cycle is skipped during weeks 2–4." |
-| Drip Mon/Thu not hot enough | `drip_watering_session` | "Forecast high is only 72°F — not hot enough to add an extra watering." |
-| Zone watered | `summer_watering_east` / `_middle` / `_west` / `_front` (same pattern for germination) | "Watered for 10 minutes. Soil was at 88%." |
-| Zone skipped — soil adequate | same per-zone ID | "Soil is already at 94% — above the 92% threshold." |
-| Zone delayed — motion | same per-zone ID | "Someone is in the east yard. Watering will happen after other zones finish." |
-| Zone still waiting (retry loop) | same per-zone ID | "East yard still occupied (check #2). Will try again in 5 minutes." |
-| Zone watered after delay | same per-zone ID | "Watered for 10 minutes after waiting for the yard to clear." |
-| Zone sensor fallback | same per-zone ID | "Sensor unavailable or stale (last reading: 85%). Ran a 6-minute safety watering." |
+### Seedling mode behavior
+- When on: uses `seedling_threshold` (default 35%) instead of `soil_threshold` (default 25%)
+- All zones use the same configurable watering window (no separate time gates)
+- `seedling_expires` auto-sets to now+30 days on first poll after mode activates; editable from dashboard
+- When expiry passes: mode is turned off automatically + dashboard notification posted
 
-`system_log.write` calls are kept alongside notifications for HA log-file detail. Session-level skips that previously exited silently via top-level `conditions:` are now checked inside the actions block so they can log before stopping.
+### Services
+- `adaptive_irrigation.water_zone` — `zone_id` (e.g. "Yard East"), `duration_minutes`
+- `adaptive_irrigation.evaluate_now` — `zone_id` — force immediate decision cycle
+- Zone ID accepts both "Yard East" and "yard_east" forms
+
+### Poll cycle
+15 minutes. Startup guard skips watering decisions on first poll; real decisions begin on second poll (~15 min after HA start). Use `evaluate_now` to force immediately.
 
 ## HVAC System
 

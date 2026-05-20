@@ -1,0 +1,57 @@
+{
+  "id": "fan_lock_clear_claimed",
+  "alias": "Fan Lock - Clear Claimed (Fan Turned Off)",
+  "description": "When any tracked fan turns off, release the user claim so HVAC can control it again.",
+  "trigger": [
+    {"platform": "state", "entity_id": "fan.tia_office_ceiling_fan", "to": "off", "id": "tia"},
+    {"platform": "state", "entity_id": "fan.caleb_office_ceiling", "to": "off", "id": "caleb"},
+    {"platform": "state", "entity_id": "fan.fan", "to": "off", "id": "family_room"},
+    {"platform": "state", "entity_id": "fan.master_ceiling_fan", "to": "off", "id": "master"},
+    {"platform": "state", "entity_id": "fan.living_room_ceiling_fan", "to": "off", "id": "living_room"},
+    {"platform": "state", "entity_id": "switch.garage_fans", "to": "off", "id": "garage"}
+  ],
+  "action": [
+    {
+      "choose": [
+        {
+          "conditions": [{"condition": "trigger", "id": "tia"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_tia_office"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "caleb"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_caleb_office"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "family_room"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_family_room"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "master"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_master"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "living_room"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_living_room"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "garage"}],
+          "sequence": [
+            {"service": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.fan_user_claimed_garage"}}
+          ]
+        }
+      ]
+    }
+  ],
+  "mode": "queued",
+  "max": 6
+}

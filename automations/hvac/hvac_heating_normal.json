@@ -1,0 +1,226 @@
+{
+    "id": "hvac_heating_normal",
+    "alias": "HVAC Heating Normal",
+    "description": "Activates heat when downstairs < 68\u00b0F, office < 65\u00b0F, or master bedroom < 65\u00b0F. Does not fire during night setback (sleep posture on). Sets hvac_managed_heating for morning restore tracking.",
+    "triggers": [
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.downstairs_thermostat_temperature",
+            "below": 68,
+            "for": "00:05:00",
+            "id": "downstairs_cold"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "below": 65,
+            "for": "00:05:00",
+            "id": "upstairs_cold"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.downstairs_thermostat_temperature",
+            "below": 55,
+            "id": "floor_emergency"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "below": 50,
+            "id": "upstairs_emergency"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.meter_pro_2689_temperature",
+            "below": 65,
+            "for": "00:05:00",
+            "id": "master_bedroom_cold"
+        },
+        {
+            "trigger": "numeric_state",
+            "entity_id": "sensor.meter_pro_2689_temperature",
+            "below": 45,
+            "id": "master_bedroom_emergency"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "state",
+            "entity_id": "input_boolean.hvac_manual_override",
+            "state": "off"
+        },
+        {
+            "condition": "not",
+            "conditions": [
+                {
+                    "condition": "state",
+                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                    "state": [
+                        "unavailable",
+                        "unknown"
+                    ]
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": [
+                                "floor_emergency",
+                                "upstairs_emergency",
+                                "master_bedroom_emergency"
+                            ]
+                        },
+                        {
+                            "condition": "not",
+                            "conditions": [
+                                {
+                                    "condition": "and",
+                                    "conditions": [
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "input_select.hvac_season",
+                                            "state": "summer"
+                                        },
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "binary_sensor.windows_assumed_open",
+                                            "state": "on"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "condition": "not",
+                            "conditions": [
+                                {
+                                    "condition": "template",
+                                    "value_template": "{{ states('input_select.hvac_season') == 'summer' and states('sensor.downstairs_thermostat_temperature') | float(100) > 44.9 and states('sensor.meter_pro_2689_temperature') | float(100) > 44.9 }}"
+                                }
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "heat"
+                            }
+                        },
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 68
+                            }
+                        },
+                        {
+                            "action": "input_boolean.turn_on",
+                            "target": {
+                                "entity_id": "input_boolean.hvac_managed_heating"
+                            }
+                        },
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC \ud83d\udea8",
+                                "message": "Emergency heat \u2014 temperature dangerously low. Heat activated."
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": [
+                                "floor_emergency",
+                                "upstairs_emergency",
+                                "master_bedroom_emergency"
+                            ]
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.windows_assumed_open",
+                            "state": "on"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "notify.mobile_app_calebs_iphone",
+                            "data": {
+                                "title": "HVAC \u26a0\ufe0f",
+                                "message": "House is cold with windows open \u2014 consider closing them. Heat is blocked."
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": [
+                                "downstairs_cold",
+                                "upstairs_cold",
+                                "master_bedroom_cold"
+                            ]
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "winter"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_boolean.master_suite_sleep_posture",
+                            "state": "off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_hvac_mode",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "hvac_mode": "heat"
+                            }
+                        },
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 68
+                            }
+                        },
+                        {
+                            "action": "input_boolean.turn_on",
+                            "target": {
+                                "entity_id": "input_boolean.hvac_managed_heating"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "single"
+}

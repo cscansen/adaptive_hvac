@@ -1,0 +1,75 @@
+{
+  "id": "fan_lock_set_claimed",
+  "alias": "Fan Lock - Set Claimed (User Manual On/Speed)",
+  "description": "When a user (not an automation) turns on or adjusts a fan, claim it and store the speed.",
+  "trigger": [
+    {"platform": "state", "entity_id": "fan.tia_office_ceiling_fan", "to": "on", "id": "tia"},
+    {"platform": "state", "entity_id": "fan.tia_office_ceiling_fan", "attribute": "percentage", "id": "tia"},
+    {"platform": "state", "entity_id": "fan.caleb_office_ceiling", "to": "on", "id": "caleb"},
+    {"platform": "state", "entity_id": "fan.caleb_office_ceiling", "attribute": "percentage", "id": "caleb"},
+    {"platform": "state", "entity_id": "fan.fan", "to": "on", "id": "family_room"},
+    {"platform": "state", "entity_id": "fan.fan", "attribute": "percentage", "id": "family_room"},
+    {"platform": "state", "entity_id": "fan.master_ceiling_fan", "to": "on", "id": "master"},
+    {"platform": "state", "entity_id": "fan.master_ceiling_fan", "attribute": "percentage", "id": "master"},
+    {"platform": "state", "entity_id": "fan.living_room_ceiling_fan", "to": "on", "id": "living_room"},
+    {"platform": "state", "entity_id": "switch.garage_fans", "to": "on", "id": "garage"}
+  ],
+  "condition": [
+    {
+      "condition": "template",
+      "value_template": "{{ trigger.to_state.context.user_id is not none }}"
+    }
+  ],
+  "action": [
+    {
+      "choose": [
+        {
+          "conditions": [{"condition": "trigger", "id": "tia"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_tia_office"}},
+            {"service": "input_number.set_value", "target": {"entity_id": "input_number.fan_claimed_speed_tia_office"},
+             "data": {"value": "{{ [trigger.to_state.attributes.get('percentage', 33) | int, 1] | max }}"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "caleb"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_caleb_office"}},
+            {"service": "input_number.set_value", "target": {"entity_id": "input_number.fan_claimed_speed_caleb_office"},
+             "data": {"value": "{{ [trigger.to_state.attributes.get('percentage', 33) | int, 1] | max }}"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "family_room"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_family_room"}},
+            {"service": "input_number.set_value", "target": {"entity_id": "input_number.fan_claimed_speed_family_room"},
+             "data": {"value": "{{ [trigger.to_state.attributes.get('percentage', 33) | int, 1] | max }}"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "master"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_master"}},
+            {"service": "input_number.set_value", "target": {"entity_id": "input_number.fan_claimed_speed_master"},
+             "data": {"value": "{{ [trigger.to_state.attributes.get('percentage', 33) | int, 1] | max }}"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "living_room"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_living_room"}}
+          ]
+        },
+        {
+          "conditions": [{"condition": "trigger", "id": "garage"}],
+          "sequence": [
+            {"service": "input_boolean.turn_on", "target": {"entity_id": "input_boolean.fan_user_claimed_garage"}}
+          ]
+        }
+      ]
+    }
+  ],
+  "mode": "queued",
+  "max": 6
+}

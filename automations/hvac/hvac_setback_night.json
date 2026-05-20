@@ -1,0 +1,21 @@
+{
+  "id": "hvac_setback_night",
+  "alias": "HVAC Night Setback",
+  "description": "Winter only. When sleep posture turns on, drops heat setpoint to 62°F.",
+  "mode": "single",
+  "triggers": [
+    {
+      "trigger": "state",
+      "entity_id": "input_boolean.master_suite_sleep_posture",
+      "to": "on"
+    }
+  ],
+  "conditions": [
+    {"condition": "state", "entity_id": "input_select.hvac_season", "state": "winter"},
+    {"condition": "state", "entity_id": "input_boolean.hvac_manual_override", "state": "off"},
+    {"condition": "state", "entity_id": "climate.downstairs_thermostat", "state": "heat"}
+  ],
+  "actions": [
+    {"action": "climate.set_temperature", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"temperature": 62}}
+  ]
+}

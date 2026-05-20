@@ -1,0 +1,27 @@
+{
+  "id": "audio_zone_master_bedroom_atv_off",
+  "alias": "Audio Zone - Master Bedroom Off (ATV Playing)",
+  "description": "Drop master bedroom zone from house follow and turn it off when Master Bedroom ATV starts playing.",
+  "trigger": [
+    {
+      "platform": "state",
+      "entity_id": "media_player.master_bedroom_apple_tv",
+      "to": "playing"
+    }
+  ],
+  "action": [
+    {
+      "service": "input_boolean.turn_off",
+      "target": {
+        "entity_id": "input_boolean.auto_audio_master_bedroom"
+      }
+    },
+    {
+      "service": "media_player.turn_off",
+      "target": {
+        "entity_id": "media_player.master_bedroom"
+      }
+    }
+  ],
+  "mode": "single"
+}

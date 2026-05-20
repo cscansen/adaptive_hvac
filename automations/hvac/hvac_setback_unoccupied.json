@@ -1,0 +1,138 @@
+{
+    "id": "hvac_setback_unoccupied",
+    "alias": "HVAC Setback Unoccupied",
+    "description": "When no one home for 8 hours: AC setback to 76\u00b0F (summer) or heat setback to 62\u00b0F (winter). Restores season-appropriate setpoint on occupancy: 68\u00b0F heat, 74\u00b0F cool.",
+    "triggers": [
+        {
+            "trigger": "template",
+            "value_template": "{{ not is_state('binary_sensor.calebs_office_occupancy','on') and not is_state('binary_sensor.tias_office_presence_motion','on') and not is_state('binary_sensor.master_bedroom_occupied','on') and not is_state('binary_sensor.main_floor_common_area_occupied','on') and not is_state('binary_sensor.family_room_occupied','on') and not is_state('binary_sensor.stairs_occupied','on') }}",
+            "for": "08:00:00",
+            "id": "unoccupied"
+        },
+        {
+            "trigger": "template",
+            "value_template": "{{ is_state('binary_sensor.calebs_office_occupancy','on') or is_state('binary_sensor.tias_office_presence_motion','on') or is_state('binary_sensor.master_bedroom_occupied','on') or is_state('binary_sensor.main_floor_common_area_occupied','on') or is_state('binary_sensor.family_room_occupied','on') or is_state('binary_sensor.stairs_occupied','on') }}",
+            "id": "occupied"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "state",
+            "entity_id": "input_boolean.hvac_manual_override",
+            "state": "off"
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "unoccupied"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "summer"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "climate.downstairs_thermostat",
+                            "state": "cool"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 76
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "unoccupied"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_select.hvac_season",
+                            "state": "winter"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "climate.downstairs_thermostat",
+                            "state": "heat"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 62
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "occupied"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "climate.downstairs_thermostat",
+                            "state": "heat"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 68
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "occupied"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "climate.downstairs_thermostat",
+                            "state": "cool"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "climate.set_temperature",
+                            "target": {
+                                "entity_id": "climate.downstairs_thermostat"
+                            },
+                            "data": {
+                                "temperature": 74
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "single"
+}

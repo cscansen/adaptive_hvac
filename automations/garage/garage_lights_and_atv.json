@@ -1,0 +1,132 @@
+{
+  "id": "1767555792809",
+  "alias": "Inside Garage Movement - Lights",
+  "description": "Turn on lights with motion or door; turn off only after no motion. Opens Protect on ATV when entering; sends ATV home when leaving.",
+  "triggers": [
+    {
+      "entity_id": [
+        "binary_sensor.garage_occupied",
+        "binary_sensor.garage_man_door_sensor_contact",
+        "binary_sensor.garage_entrance_contact"
+      ],
+      "to": [
+        "on"
+      ],
+      "trigger": "state"
+    },
+    {
+      "entity_id": [
+        "binary_sensor.garage_occupied"
+      ],
+      "to": [
+        "off"
+      ],
+      "for": {
+        "hours": 0,
+        "minutes": 5,
+        "seconds": 0
+      },
+      "trigger": "state"
+    }
+  ],
+  "actions": [
+    {
+      "choose": [
+        {
+          "conditions": [
+            {
+              "condition": "template",
+              "value_template": "{{ trigger.to_state.state == 'on' }}"
+            }
+          ],
+          "sequence": [
+            {
+              "target": {
+                "entity_id": "light.garage_work_bench_outlet"
+              },
+              "action": "light.turn_on"
+            },
+            {
+              "if": [
+                {
+                  "condition": "state",
+                  "entity_id": "media_player.garage_apple_tv",
+                  "state": ["off", "idle"]
+                }
+              ],
+              "then": [
+                {
+                  "if": [
+                    {
+                      "condition": "state",
+                      "entity_id": "media_player.garage_apple_tv",
+                      "state": "off"
+                    }
+                  ],
+                  "then": [
+                    {
+                      "action": "media_player.turn_on",
+                      "target": {
+                        "entity_id": "media_player.garage_apple_tv"
+                      }
+                    },
+                    {
+                      "delay": "00:00:06"
+                    }
+                  ]
+                },
+                {
+                  "action": "media_player.select_source",
+                  "target": {
+                    "entity_id": "media_player.garage_apple_tv"
+                  },
+                  "data": {
+                    "source": "Protect"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "conditions": [
+            {
+              "condition": "state",
+              "entity_id": "binary_sensor.garage_occupied",
+              "state": "off"
+            }
+          ],
+          "sequence": [
+            {
+              "target": {
+                "entity_id": "light.garage_work_bench_outlet"
+              },
+              "action": "light.turn_off"
+            },
+            {
+              "if": [
+                {
+                  "condition": "state",
+                  "entity_id": "media_player.garage_apple_tv",
+                  "state": "idle"
+                }
+              ],
+              "then": [
+                {
+                  "action": "remote.send_command",
+                  "target": {
+                    "entity_id": "remote.garage"
+                  },
+                  "data": {
+                    "command": "home"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "mode": "restart"
+}

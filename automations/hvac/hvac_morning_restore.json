@@ -1,0 +1,17 @@
+{
+  "id": "hvac_morning_restore",
+  "alias": "HVAC Morning Restore",
+  "description": "Winter only. 6am: restores heat setpoint to 68°F after night setback. Clears hvac_managed_heating so heating_normal re-evaluates fresh.",
+  "mode": "single",
+  "triggers": [
+    {"trigger": "time", "at": "06:00:00"}
+  ],
+  "conditions": [
+    {"condition": "state", "entity_id": "input_select.hvac_season", "state": "winter"},
+    {"condition": "state", "entity_id": "input_boolean.hvac_manual_override", "state": "off"}
+  ],
+  "actions": [
+    {"action": "climate.set_temperature", "target": {"entity_id": "climate.downstairs_thermostat"}, "data": {"temperature": 68}},
+    {"action": "input_boolean.turn_off", "target": {"entity_id": "input_boolean.hvac_managed_heating"}}
+  ]
+}

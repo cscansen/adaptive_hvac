@@ -1,0 +1,11 @@
+{
+  "enabledMcpjsonServers": ["home-assistant"],
+  "permissions": {
+    "allow": [
+      "Bash(source ~/.secrets && curl *)",
+      "Bash(python3 *)",
+      "mcp__home-assistant__*",
+      "Bash(bash /mnt/nas/ai-workspace/documentation/homeassistant/refresh.sh)"
+    ]
+  }
+}
