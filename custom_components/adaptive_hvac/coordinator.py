@@ -254,11 +254,22 @@ class ZoneCoordinator(DataUpdateCoordinator):
             preheat_trigger=DEFAULT_PREHEAT_TRIGGER,
         )
 
+        # Check if auto-control is enabled for this zone
+        auto_control_enabled = self._read_auto_control_enabled()
+
         # Decide
         decision = decide_zone(zone, [zone], sys_state, cfg, sys_cfg)
+
+        # If auto-control is disabled, suppress fan commands but keep mode/status for diagnostics
+        if not auto_control_enabled:
+            decision.fan_commands = {}
+
         self.last_decision = decision
 
-        _LOGGER.debug(f"Zone {self.zone_name} decision: {decision.mode} - {decision.status}")
+        _LOGGER.debug(
+            f"Zone {self.zone_name} decision: {decision.mode} - {decision.status}"
+            f" (auto_control={'on' if auto_control_enabled else 'off'})"
+        )
 
         return decision
 
