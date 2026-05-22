@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.2] - 2026-05-22
+
+### Fixed
+- Fixed `ModuleNotFoundError: No module named 'homeassistant.helpers.restore_entity'` by correcting import in `number.py` to use `homeassistant.helpers.restore_state`
+
 ## [0.2.1] - 2026-05-22
 
 ### Fixed
