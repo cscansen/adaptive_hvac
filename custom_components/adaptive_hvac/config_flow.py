@@ -120,31 +120,31 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             vol.Optional(CONF_AC_ENABLED, default=True): selector.BooleanSelector(),
             vol.Optional(CONF_AC_SETPOINT, default=DEFAULT_AC_SETPOINT): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=55, max=75, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=55, max=75, unit="°F")
             ),
             vol.Optional(CONF_HEAT_THRESHOLD, default=DEFAULT_HEAT_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=50, max=75, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=50, max=75, unit="°F")
             ),
             vol.Optional(CONF_HEAT_SETPOINT, default=DEFAULT_HEAT_SETPOINT): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=50, max=75, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=50, max=75, unit="°F")
             ),
             vol.Optional(CONF_EMERGENCY_HEAT_THRESHOLD, default=DEFAULT_EMERGENCY_HEAT_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=30, max=60, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=30, max=60, unit="°F")
             ),
             vol.Optional(CONF_SETBACK_COOL_TEMP, default=DEFAULT_SETBACK_COOL_TEMP): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=70, max=85, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=70, max=85, unit="°F")
             ),
             vol.Optional(CONF_SETBACK_HEAT_TEMP, default=DEFAULT_SETBACK_HEAT_TEMP): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=55, max=70, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=55, max=70, unit="°F")
             ),
             vol.Optional(CONF_UNOCCUPIED_HOURS, default=DEFAULT_UNOCCUPIED_HOURS): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="hours")
+                selector.NumberSelectorConfig(min=1, max=24, step=1, unit="hours")
             ),
             vol.Optional(CONF_WINDOWS_ASSUMED_OPEN_SENSOR, default=DEFAULT_WINDOWS_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="binary_sensor")
             ),
             vol.Optional(CONF_WINDOW_FAN_SPEED, default=DEFAULT_WINDOW_FAN_SPEED): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
+                selector.NumberSelectorConfig(min=0, max=100, unit="%")
             ),
             vol.Optional(CONF_PASSIVE_COOLING_ENABLED, default=DEFAULT_PASSIVE_COOLING_ENABLED): selector.BooleanSelector(),
         })
@@ -194,19 +194,19 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelectorConfig(domain="binary_sensor")
             ),
             vol.Optional(CONF_COMFORT_UPPER, default=DEFAULT_COMFORT_UPPER): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=65, max=75, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=65, max=75, unit="°F")
             ),
             vol.Optional(CONF_PASSIVE_THRESHOLD, default=DEFAULT_PASSIVE_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=68, max=78, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=68, max=78, unit="°F")
             ),
             vol.Optional(CONF_PASSIVE_HUMID_THRESHOLD, default=DEFAULT_PASSIVE_HUMID_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=40, max=80, unit_of_measurement="%")
+                selector.NumberSelectorConfig(min=40, max=80, unit="%")
             ),
             vol.Optional(CONF_ESCALATE_THRESHOLD, default=DEFAULT_ESCALATE_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=70, max=80, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=70, max=80, unit="°F")
             ),
             vol.Optional(CONF_EMERGENCY_THRESHOLD, default=DEFAULT_EMERGENCY_THRESHOLD): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=75, max=90, unit_of_measurement="°F")
+                selector.NumberSelectorConfig(min=75, max=90, unit="°F")
             ),
         })
 
@@ -239,31 +239,31 @@ class OptionsFlow(config_entries.OptionsFlow):
         if entry_type == ENTRY_TYPE_SYSTEM:
             schema = vol.Schema({
                 vol.Optional(CONF_AC_SETPOINT, default=defaults.get(CONF_AC_SETPOINT, DEFAULT_AC_SETPOINT)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=55, max=75, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=55, max=75, unit="°F")
                 ),
                 vol.Optional(CONF_HEAT_THRESHOLD, default=defaults.get(CONF_HEAT_THRESHOLD, DEFAULT_HEAT_THRESHOLD)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=50, max=75, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=50, max=75, unit="°F")
                 ),
                 vol.Optional(CONF_HEAT_SETPOINT, default=defaults.get(CONF_HEAT_SETPOINT, DEFAULT_HEAT_SETPOINT)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=50, max=75, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=50, max=75, unit="°F")
                 ),
                 vol.Optional(CONF_SETBACK_COOL_TEMP, default=defaults.get(CONF_SETBACK_COOL_TEMP, DEFAULT_SETBACK_COOL_TEMP)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=70, max=85, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=70, max=85, unit="°F")
                 ),
                 vol.Optional(CONF_SETBACK_HEAT_TEMP, default=defaults.get(CONF_SETBACK_HEAT_TEMP, DEFAULT_SETBACK_HEAT_TEMP)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=55, max=70, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=55, max=70, unit="°F")
                 ),
             })
         else:
             schema = vol.Schema({
                 vol.Optional(CONF_COMFORT_UPPER, default=defaults.get(CONF_COMFORT_UPPER, DEFAULT_COMFORT_UPPER)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=65, max=75, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=65, max=75, unit="°F")
                 ),
                 vol.Optional(CONF_PASSIVE_THRESHOLD, default=defaults.get(CONF_PASSIVE_THRESHOLD, DEFAULT_PASSIVE_THRESHOLD)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=68, max=78, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=68, max=78, unit="°F")
                 ),
                 vol.Optional(CONF_ESCALATE_THRESHOLD, default=defaults.get(CONF_ESCALATE_THRESHOLD, DEFAULT_ESCALATE_THRESHOLD)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=70, max=80, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=70, max=80, unit="°F")
                 ),
             })
 
