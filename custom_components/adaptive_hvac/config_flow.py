@@ -118,7 +118,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_OCCUPANCY, default=[]): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
             ),
-            vol.Optional(CONF_AC_ENABLED, default=True): selector.BooleanSelector(),
+            vol.Optional(CONF_AC_ENABLED, default=True): selector.BooleanSelector({}),
             vol.Optional(CONF_AC_SETPOINT, default=DEFAULT_AC_SETPOINT): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=55, max=75, unit="°F")
             ),
@@ -138,7 +138,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.NumberSelectorConfig(min=55, max=70, unit="°F")
             ),
             vol.Optional(CONF_UNOCCUPIED_HOURS, default=DEFAULT_UNOCCUPIED_HOURS): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=24, step=1, unit="hours")
+                selector.NumberSelectorConfig(min=1, max=24, unit="hours")
             ),
             vol.Optional(CONF_WINDOWS_ASSUMED_OPEN_SENSOR, default=DEFAULT_WINDOWS_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="binary_sensor")
@@ -146,7 +146,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_WINDOW_FAN_SPEED, default=DEFAULT_WINDOW_FAN_SPEED): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=0, max=100, unit="%")
             ),
-            vol.Optional(CONF_PASSIVE_COOLING_ENABLED, default=DEFAULT_PASSIVE_COOLING_ENABLED): selector.BooleanSelector(),
+            vol.Optional(CONF_PASSIVE_COOLING_ENABLED, default=DEFAULT_PASSIVE_COOLING_ENABLED): selector.BooleanSelector({}),
         })
 
         return self.async_show_form(
@@ -179,8 +179,8 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema({
             vol.Required(CONF_ZONE_NAME): str,
             vol.Optional(CONF_FLOOR, default=""): str,
-            vol.Optional(CONF_IS_PRIMARY_ZONE, default=DEFAULT_IS_PRIMARY_ZONE): selector.BooleanSelector(),
-            vol.Optional(CONF_AUTO_CONTROL_ENABLED, default=DEFAULT_AUTO_CONTROL_ENABLED): selector.BooleanSelector(),
+            vol.Optional(CONF_IS_PRIMARY_ZONE, default=DEFAULT_IS_PRIMARY_ZONE): selector.BooleanSelector({}),
+            vol.Optional(CONF_AUTO_CONTROL_ENABLED, default=DEFAULT_AUTO_CONTROL_ENABLED): selector.BooleanSelector({}),
             vol.Required(CONF_TEMP_SENSORS): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", multiple=True)
             ),
