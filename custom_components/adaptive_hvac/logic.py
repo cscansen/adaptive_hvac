@@ -67,6 +67,8 @@ class SystemState:
 class ZoneDecision:
     """Zone-level decision output."""
     mode: str                                       # state machine mode
+    zone_name: str = ""                            # zone identifier for routing commands
+    is_primary_zone: bool = False                  # only primary zone gates AC escalation
     fan_commands: dict[str, int | None] = field(default_factory=dict)  # entity → speed% or None
     thermal_request: Optional[str] = None          # "heat_68" | "cool_68" | "cool_74" | None
     urgency: int = 0                               # 0–5, drives thermostat priority
@@ -188,6 +190,8 @@ def decide_zone(
     if sys_state.manual_override:
         return ZoneDecision(
             mode="manual_override",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             status=f"{zone.zone_name}: MANUAL OVERRIDE",
             reasoning=["Manual override active"],
@@ -196,6 +200,8 @@ def decide_zone(
     if not sys_state.system_active:
         return ZoneDecision(
             mode="manual_override",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             status=f"{zone.zone_name}: SYSTEM INACTIVE",
             reasoning=["System paused via switch"],
@@ -206,6 +212,8 @@ def decide_zone(
         reasoning.append("Sensor unavailable/invalid")
         return ZoneDecision(
             mode="sensor_failsafe",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             status=f"{zone.zone_name}: SENSOR FAILSAFE",
             reasoning=reasoning,
@@ -219,6 +227,8 @@ def decide_zone(
         fan_cmds = {f: 100 for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="emergency_cooling",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request="cool_68",
             urgency=5,
@@ -231,6 +241,8 @@ def decide_zone(
         reasoning.append(f"Temp {zone.temp:.1f}°F ≤ emergency heat {sys_cfg.emergency_heat_threshold}°F")
         return ZoneDecision(
             mode="emergency_heating",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             thermal_request="heat_68",
             urgency=5,
@@ -245,6 +257,8 @@ def decide_zone(
             reasoning.append(f"Summer setback: cool to {sys_cfg.setback_cool_temp}°F")
             return ZoneDecision(
                 mode="setback_unoccupied",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
                 fan_commands={},
                 thermal_request=f"cool_{sys_cfg.setback_cool_temp:.0f}",
                 urgency=1,
@@ -255,6 +269,8 @@ def decide_zone(
             reasoning.append(f"Winter setback: heat to {sys_cfg.setback_heat_temp}°F")
             return ZoneDecision(
                 mode="setback_unoccupied",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
                 fan_commands={},
                 thermal_request=f"heat_{sys_cfg.setback_heat_temp:.0f}",
                 urgency=1,
@@ -268,6 +284,8 @@ def decide_zone(
         reasoning.append(f"Night setback to {sys_cfg.setback_heat_temp}°F")
         return ZoneDecision(
             mode="setback_night",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             thermal_request=f"heat_{sys_cfg.setback_heat_temp:.0f}",
             urgency=2,
@@ -287,6 +305,8 @@ def decide_zone(
         fan_cmds = {f: cfg.precool_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="pre_cool",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request="off",
             urgency=2,
@@ -304,6 +324,8 @@ def decide_zone(
         reasoning.append("Pre-heating before cold night")
         return ZoneDecision(
             mode="pre_heat",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             thermal_request="heat_68",
             urgency=2,
@@ -317,6 +339,8 @@ def decide_zone(
         fan_cmds = {f: cfg.escalate_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="ac_cooling",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request=f"cool_{cfg.ac_setpoint:.0f}",
             urgency=3,
@@ -330,6 +354,8 @@ def decide_zone(
         fan_cmds = {f: cfg.escalate_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="ac_cooling",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request=f"cool_{cfg.ac_setpoint:.0f}",
             urgency=4,
@@ -343,6 +369,8 @@ def decide_zone(
         fan_cmds = {f: cfg.window_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="passive_windows_open",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request="off",
             urgency=2,
@@ -362,6 +390,8 @@ def decide_zone(
         fan_cmds = {f: cfg.passive_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
             mode="passive_cooling",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands=fan_cmds,
             thermal_request="off",
             urgency=2,
@@ -374,6 +404,8 @@ def decide_zone(
         reasoning.append(f"Winter: temp {zone.temp:.1f}°F ≤ heat threshold {sys_cfg.heat_threshold}°F")
         return ZoneDecision(
             mode="heating_normal",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
             fan_commands={},
             thermal_request=f"heat_{sys_cfg.heat_setpoint:.0f}",
             urgency=2,
@@ -394,6 +426,8 @@ def decide_zone(
                 fan_cmds = {f: cfg.passive_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
                 return ZoneDecision(
                     mode="equalization",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
                     fan_commands=fan_cmds,
                     thermal_request="off",
                     urgency=1,
@@ -405,6 +439,8 @@ def decide_zone(
     reasoning.append(f"Comfortable: temp {zone.temp:.1f}°F in range")
     return ZoneDecision(
         mode="idle",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
         fan_commands={},
         status=f"{zone.zone_name}: IDLE {zone.temp:.1f}°F",
         reasoning=reasoning,
@@ -454,13 +490,28 @@ def decide_system(
             reasoning=reasoning,
         )
 
+    # Find primary zone decision (only primary zone gates AC decisions)
+    primary_zones = [d for d in zone_decisions if d.is_primary_zone]
+    primary_decision = primary_zones[0] if primary_zones else None
+
+    if primary_decision:
+        reasoning.append(f"Primary zone: {primary_decision.zone_name}")
+    else:
+        reasoning.append("No primary zone configured (using highest-urgency zone)")
+
     # Aggregate requests by urgency
     max_urgency = max((d.urgency for d in zone_decisions), default=0)
     highest_urgency_decisions = [d for d in zone_decisions if d.urgency == max_urgency]
 
-    # Extract thermal requests from highest urgency
-    heat_requests = [d.thermal_request for d in highest_urgency_decisions if d.thermal_request and d.thermal_request.startswith("heat_")]
-    cool_requests = [d.thermal_request for d in highest_urgency_decisions if d.thermal_request and d.thermal_request.startswith("cool_")]
+    # Extract thermal requests:
+    # If primary zone exists, only use its request; otherwise use highest urgency
+    if primary_decision:
+        heat_requests = [primary_decision.thermal_request] if (primary_decision.thermal_request and primary_decision.thermal_request.startswith("heat_")) else []
+        cool_requests = [primary_decision.thermal_request] if (primary_decision.thermal_request and primary_decision.thermal_request.startswith("cool_")) else []
+    else:
+        # Primary not configured, use highest urgency zones
+        heat_requests = [d.thermal_request for d in highest_urgency_decisions if d.thermal_request and d.thermal_request.startswith("heat_")]
+        cool_requests = [d.thermal_request for d in highest_urgency_decisions if d.thermal_request and d.thermal_request.startswith("cool_")]
 
     # Decide thermostat mode based on strongest request
     thermostat_hvac_mode = "off"
