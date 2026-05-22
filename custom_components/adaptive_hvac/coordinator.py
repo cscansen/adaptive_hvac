@@ -156,6 +156,29 @@ class ZoneCoordinator(DataUpdateCoordinator):
             return state.state == "on"
         return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
+    def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
+        """Map placeholder fan commands to real entity IDs from fan_config."""
+        mapped = {}
+        fan_config = self.zone_config.get("fan_config", [])
+        fans_claimed = self._read_fan_claims()
+
+        for fan_entry in fan_config:
+            fan_id = fan_entry.get("fan_id")
+            fan_entity = fan_entry.get("fan_entity")
+
+            # Skip if fan is claimed by user or entity not defined
+            if not fan_entity or fan_id in fans_claimed:
+                continue
+
+            # Get speed from the placeholder command
+            if fan_id in fan_commands:
+                speed = fan_commands[fan_id]
+                # Only add if speed is not None (None = skip this mode for this fan)
+                if speed is not None:
+                    mapped[fan_entity] = speed
+
+        return mapped
+
     def _calculate_trend(self) -> float:
         """
         Calculate temperature trend in °F/hr over 30-min window.
@@ -260,8 +283,11 @@ class ZoneCoordinator(DataUpdateCoordinator):
         # Decide
         decision = decide_zone(zone, [zone], sys_state, cfg, sys_cfg)
 
-        # If auto-control is disabled, suppress fan commands but keep mode/status for diagnostics
-        if not auto_control_enabled:
+        # Map placeholder fan commands to real entity IDs from fan_config
+        if auto_control_enabled:
+            decision.fan_commands = self._map_fan_commands(decision.fan_commands)
+        else:
+            # If auto-control is disabled, suppress fan commands but keep mode/status for diagnostics
             decision.fan_commands = {}
 
         self.last_decision = decision
