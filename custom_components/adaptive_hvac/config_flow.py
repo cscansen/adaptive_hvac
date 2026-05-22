@@ -229,83 +229,8 @@ class OptionsFlow(config_entries.OptionsFlow):
     """Options flow for Adaptive HVAC."""
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Init step."""
+        """Init step — read-only for now due to complexity."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        entry_type = self.config_entry.data.get("entry_type")
-        schema = None
-
-        # For options, only allow editing number selectors (not entity selectors from initial setup)
-        if entry_type == ENTRY_TYPE_SYSTEM:
-            try:
-                ac_setpoint = self.config_entry.options.get(CONF_AC_SETPOINT)
-                if ac_setpoint is None:
-                    ac_setpoint = self.config_entry.data.get(CONF_AC_SETPOINT, DEFAULT_AC_SETPOINT)
-
-                heat_threshold = self.config_entry.options.get(CONF_HEAT_THRESHOLD)
-                if heat_threshold is None:
-                    heat_threshold = self.config_entry.data.get(CONF_HEAT_THRESHOLD, DEFAULT_HEAT_THRESHOLD)
-
-                heat_setpoint = self.config_entry.options.get(CONF_HEAT_SETPOINT)
-                if heat_setpoint is None:
-                    heat_setpoint = self.config_entry.data.get(CONF_HEAT_SETPOINT, DEFAULT_HEAT_SETPOINT)
-
-                setback_cool = self.config_entry.options.get(CONF_SETBACK_COOL_TEMP)
-                if setback_cool is None:
-                    setback_cool = self.config_entry.data.get(CONF_SETBACK_COOL_TEMP, DEFAULT_SETBACK_COOL_TEMP)
-
-                setback_heat = self.config_entry.options.get(CONF_SETBACK_HEAT_TEMP)
-                if setback_heat is None:
-                    setback_heat = self.config_entry.data.get(CONF_SETBACK_HEAT_TEMP, DEFAULT_SETBACK_HEAT_TEMP)
-
-                schema = vol.Schema({
-                    vol.Optional(CONF_AC_SETPOINT, default=ac_setpoint): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=55, max=75, unit="°F")
-                    ),
-                    vol.Optional(CONF_HEAT_THRESHOLD, default=heat_threshold): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=50, max=75, unit="°F")
-                    ),
-                    vol.Optional(CONF_HEAT_SETPOINT, default=heat_setpoint): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=50, max=75, unit="°F")
-                    ),
-                    vol.Optional(CONF_SETBACK_COOL_TEMP, default=setback_cool): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=70, max=85, unit="°F")
-                    ),
-                    vol.Optional(CONF_SETBACK_HEAT_TEMP, default=setback_heat): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=55, max=70, unit="°F")
-                    ),
-                })
-            except (KeyError, TypeError, ValueError):
-                schema = vol.Schema({})
-        elif entry_type == ENTRY_TYPE_ZONE:
-            try:
-                comfort = self.config_entry.options.get(CONF_COMFORT_UPPER)
-                if comfort is None:
-                    comfort = self.config_entry.data.get(CONF_COMFORT_UPPER, DEFAULT_COMFORT_UPPER)
-
-                passive = self.config_entry.options.get(CONF_PASSIVE_THRESHOLD)
-                if passive is None:
-                    passive = self.config_entry.data.get(CONF_PASSIVE_THRESHOLD, DEFAULT_PASSIVE_THRESHOLD)
-
-                escalate = self.config_entry.options.get(CONF_ESCALATE_THRESHOLD)
-                if escalate is None:
-                    escalate = self.config_entry.data.get(CONF_ESCALATE_THRESHOLD, DEFAULT_ESCALATE_THRESHOLD)
-
-                schema = vol.Schema({
-                    vol.Optional(CONF_COMFORT_UPPER, default=comfort): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=65, max=75, unit="°F")
-                    ),
-                    vol.Optional(CONF_PASSIVE_THRESHOLD, default=passive): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=68, max=78, unit="°F")
-                    ),
-                    vol.Optional(CONF_ESCALATE_THRESHOLD, default=escalate): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=70, max=80, unit="°F")
-                    ),
-                })
-            except (KeyError, TypeError, ValueError):
-                schema = vol.Schema({})
-        else:
-            schema = vol.Schema({})
-
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_abort(reason="options_not_supported")
