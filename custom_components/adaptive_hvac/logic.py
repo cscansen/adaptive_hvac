@@ -395,6 +395,27 @@ def decide_zone(
             reasoning=reasoning,
         )
 
+    # Passive cooling (humidity trigger)
+    if (
+        zone.humidity is not None
+        and zone.humidity >= cfg.passive_humid_threshold
+        and zone.temp >= cfg.passive_threshold
+        and season == "summer"
+    ):
+        reasoning.append(f"Humidity {zone.humidity:.0f}% ≥ {cfg.passive_humid_threshold:.0f}% at temp {zone.temp:.1f}°F")
+        reasoning.append("High humidity: activate passive cooling")
+        fan_cmds = {f: cfg.passive_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
+        return ZoneDecision(
+            mode="passive_cooling",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
+            fan_commands=fan_cmds,
+            thermal_request="off",
+            urgency=2,
+            status=f"{zone.zone_name}: PASSIVE COOLING (HUMIDITY) {zone.temp:.1f}°F, {zone.humidity:.0f}%",
+            reasoning=reasoning,
+        )
+
     # Passive cooling (closed windows, summer)
     if (
         zone.temp >= cfg.passive_threshold
