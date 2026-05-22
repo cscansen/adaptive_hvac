@@ -372,6 +372,16 @@ Zone respects legacy fan lock system:
 - Coordinator reads system config from entry.data at startup; changes require reload
 - Zone coordinator runs independently on SCAN_INTERVAL (3 min); system coordinator aggregates
 
+### Release Checklist
+When releasing a new version:
+1. Update `manifest.json` version field
+2. Add entry to `CHANGELOG.md` with section for Added/Changed/Fixed/Removed
+3. Create GitHub Release via `gh release create vX.Y.Z` with release notes
+4. Update HACS if version bumps significantly
+5. Test config flow loads without errors before release
+
+**CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
+
 ## Notes
 - Still learning HA — update this file as patterns emerge
 - Automations created via API use string IDs (not UUIDs) — choose descriptive IDs
