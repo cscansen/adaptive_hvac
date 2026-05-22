@@ -76,10 +76,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> config_entries.OptionsFlow:
+    def async_get_options_flow(config_entry):
         """Return options flow."""
         return OptionsFlow(config_entry)
 
@@ -89,12 +86,10 @@ class OptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        super().__init__()
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Init step — read-only for now due to complexity."""
+    async def async_step_init(self, user_input=None):
+        """Init step."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-
         return self.async_abort(reason="options_not_supported")
