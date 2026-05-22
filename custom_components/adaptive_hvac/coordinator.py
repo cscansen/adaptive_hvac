@@ -156,6 +156,15 @@ class ZoneCoordinator(DataUpdateCoordinator):
             return state.state == "on"
         return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
+    def _read_windows_assumed_open(self) -> bool:
+        """Read global windows open sensor."""
+        windows_entity = DEFAULT_WINDOWS_SENSOR
+        if not windows_entity:
+            return False
+
+        state = self.hass.states.get(windows_entity)
+        return state and state.state == "on" if state else False
+
     def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
         """Map placeholder fan commands to real entity IDs from fan_config."""
         mapped = {}
@@ -218,6 +227,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
         window_open = self._read_window_open()
         zone_occupied = self._read_occupancy()
         fans_claimed = self._read_fan_claims()
+        windows_assumed_open = self._read_windows_assumed_open()
         trend = self._calculate_trend()
 
         # Build zone state
@@ -232,7 +242,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
             zone_occupied=zone_occupied,
             current_mode=self.last_decision.mode if self.last_decision else "idle",
             is_primary_zone=self.zone_config.get("is_primary_zone", DEFAULT_IS_PRIMARY_ZONE),
-            windows_assumed_open=False,  # Will be set by SystemCoordinator
+            windows_assumed_open=windows_assumed_open,
         )
 
         # Track mode age
