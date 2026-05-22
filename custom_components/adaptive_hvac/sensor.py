@@ -135,6 +135,7 @@ class ZoneStatusSensor(CoordinatorEntity, SensorEntity):
             "thermal_request": decision.thermal_request,
             "urgency": decision.urgency,
             "reasoning": " | ".join(decision.reasoning),
+            "fan_commands": decision.fan_commands,
         }
 
 
