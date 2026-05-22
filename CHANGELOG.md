@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.7] - 2026-05-22
+
+### Fixed
+- Fixed OptionsFlow initialization by explicitly defining `__init__` method to accept config_entry parameter
+
 ## [0.2.6] - 2026-05-22
 
 ### Changed
