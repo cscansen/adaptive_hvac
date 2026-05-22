@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.6] - 2026-05-22
+
+### Changed
+- Disabled options flow (returns `options_not_supported`) — configuration is read-only from the UI. Edit config entries by recreating them or modifying `config.json` directly. This eliminates selector complexity that was causing 500 errors.
+
 ## [0.2.5] - 2026-05-22
 
 ### Fixed
