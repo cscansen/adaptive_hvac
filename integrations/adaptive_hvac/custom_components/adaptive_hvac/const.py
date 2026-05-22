@@ -49,29 +49,62 @@ ALL_SEASONS = [SEASON_SUMMER, SEASON_SHOULDER, SEASON_WINTER]
 # Poll interval (minutes)
 SCAN_INTERVAL_MINUTES = 3
 
-# Default thresholds (°F)
-DEFAULT_COMFORT_UPPER = 70.0
-DEFAULT_PASSIVE_THRESHOLD = 72.0
-DEFAULT_ESCALATE_THRESHOLD = 74.0
-DEFAULT_EMERGENCY_THRESHOLD = 78.0
-DEFAULT_PASSIVE_FAN_SPEED = 33
-DEFAULT_ESCALATE_FAN_SPEED = 50
-DEFAULT_AC_SETPOINT = 68.0
+# ===== DEFAULTS (SYSTEM) =====
 
+# System — AC control
+DEFAULT_AC_ENABLED = True
+DEFAULT_AC_SETPOINT = 68.0
+DEFAULT_AC_TRIGGER_SOLAR_WATTS = 2000
+DEFAULT_AC_SOLAR_WINDOW_START = 10  # 10am
+DEFAULT_AC_SOLAR_WINDOW_END = 15  # 3pm
+DEFAULT_AC_TRIGGER_HUMIDITY = 55
+
+# System — Heating
 DEFAULT_HEAT_THRESHOLD = 68.0
 DEFAULT_HEAT_SETPOINT = 68.0
 DEFAULT_EMERGENCY_HEAT_THRESHOLD = 55.0
 
+# System — Setback
 DEFAULT_SETBACK_COOL_TEMP = 76.0
 DEFAULT_SETBACK_HEAT_TEMP = 62.0
-DEFAULT_NIGHT_SETBACK_TEMP = 62.0
 DEFAULT_UNOCCUPIED_HOURS = 8
+DEFAULT_RETURN_HOME_COOL_SETPOINT = 74.0
+DEFAULT_RETURN_HOME_HEAT_SETPOINT = 68.0
 
+# System — Forecast
 DEFAULT_PRECOOL_TRIGGER = 92.0
 DEFAULT_PREHEAT_TRIGGER = 30.0
 
+# System — Windows & passive
+DEFAULT_WINDOWS_SENSOR = "binary_sensor.windows_assumed_open"
+DEFAULT_WINDOW_FAN_SPEED = 25
+DEFAULT_PASSIVE_COOLING_ENABLED = True
+DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
+
+# System — Season thresholds
 DEFAULT_SUMMER_THRESHOLD = 75.0
 DEFAULT_WINTER_THRESHOLD = 40.0
+
+# ===== DEFAULTS (ZONE) =====
+
+# Zone — Cooling thresholds
+DEFAULT_COMFORT_UPPER = 70.0
+DEFAULT_PASSIVE_THRESHOLD = 72.0
+DEFAULT_PASSIVE_HUMID_THRESHOLD = 55
+DEFAULT_ESCALATE_THRESHOLD = 74.0
+DEFAULT_EMERGENCY_THRESHOLD = 78.0
+
+# Zone — Fan speeds (per mode)
+DEFAULT_COMFORT_SPEED = 0
+DEFAULT_PASSIVE_FAN_SPEED = 33
+DEFAULT_WINDOW_FAN_SPEED = 25
+DEFAULT_PRECOOL_FAN_SPEED = 25
+DEFAULT_ESCALATE_FAN_SPEED = 50
+DEFAULT_EMERGENCY_FAN_SPEED = 100
+
+# Zone — Flags
+DEFAULT_IS_PRIMARY_ZONE = False
+DEFAULT_AUTO_CONTROL_ENABLED = True
 
 # Temperature trend thresholds (°F/hr)
 TREND_PREEMPTIVE_PASSIVE = 0.8
@@ -105,18 +138,66 @@ ATTR_REASONING = "reasoning"
 SERVICE_FORCE_EVALUATE = "force_evaluate"
 SERVICE_SET_MANUAL_OVERRIDE = "set_manual_override"
 
-# Option flow keys
+# ===== CONFIG FLOW KEYS =====
+
+# System (global) — Identity & sensors
 CONF_THERMOSTAT = "thermostat_entity"
 CONF_WEATHER = "weather_entity"
 CONF_SOLAR = "solar_entity"
 CONF_SLEEP_POSTURE = "sleep_posture_entity"
 CONF_OCCUPANCY = "occupancy_entities"
 
+# System — AC control
+CONF_AC_ENABLED = "ac_enabled"
+CONF_AC_SETPOINT = "ac_setpoint"
+CONF_AC_TRIGGER_SOLAR_WATTS = "ac_trigger_solar_watts"
+CONF_AC_SOLAR_WINDOW_START = "ac_solar_window_start"
+CONF_AC_SOLAR_WINDOW_END = "ac_solar_window_end"
+CONF_AC_TRIGGER_HUMIDITY = "ac_trigger_humidity"
+
+# System — Heating (global, not per-zone)
+CONF_HEAT_THRESHOLD = "heat_threshold"
+CONF_HEAT_SETPOINT = "heat_setpoint"
+CONF_EMERGENCY_HEAT_THRESHOLD = "emergency_heat_threshold"
+
+# System — Setback & occupancy
+CONF_SETBACK_COOL_TEMP = "setback_cool_temp"
+CONF_SETBACK_HEAT_TEMP = "setback_heat_temp"
+CONF_UNOCCUPIED_HOURS = "unoccupied_hours"
+CONF_RETURN_HOME_COOL_SETPOINT = "return_home_cool_setpoint"
+CONF_RETURN_HOME_HEAT_SETPOINT = "return_home_heat_setpoint"
+
+# System — Forecast & pre-conditioning
+CONF_PRECOOL_TRIGGER = "precool_trigger"
+CONF_PREHEAT_TRIGGER = "preheat_trigger"
+
+# System — Windows & passive cooling
+CONF_WINDOWS_ASSUMED_OPEN_SENSOR = "windows_assumed_open_sensor"
+CONF_WINDOW_FAN_SPEED = "window_fan_speed"
+CONF_PASSIVE_COOLING_ENABLED = "passive_cooling_enabled"
+
+# System — Fan pool definition
+CONF_WHOLE_HOUSE_FAN_ENTITY = "whole_house_fan_entity"
+CONF_FAN_POOL = "fan_pool"  # List of {id, entity_id, label}
+
+# Zone (room) — Identity
 CONF_ZONE_NAME = "zone_name"
 CONF_FLOOR = "floor"
+CONF_IS_PRIMARY_ZONE = "is_primary_zone"
+CONF_AUTO_CONTROL_ENABLED = "auto_control_enabled"  # Default for auto-control switch
+
+# Zone — Sensors
 CONF_TEMP_SENSORS = "temp_sensors"
 CONF_HUMIDITY_SENSOR = "humidity_sensor"
-CONF_CEILING_FANS = "ceiling_fans"
-CONF_FAN_LOCK_ENTITIES = "fan_lock_entities"
 CONF_WINDOW_SENSOR = "window_sensor"
 CONF_ZONE_OCCUPANCY = "zone_occupancy_sensor"
+
+# Zone — Cooling thresholds (per-room)
+CONF_COMFORT_UPPER = "comfort_upper"
+CONF_PASSIVE_THRESHOLD = "passive_threshold"
+CONF_PASSIVE_HUMID_THRESHOLD = "passive_humid_threshold"
+CONF_ESCALATE_THRESHOLD = "escalate_threshold"
+CONF_EMERGENCY_THRESHOLD = "emergency_threshold"
+
+# Zone — Fan configuration
+CONF_FAN_CONFIG = "fan_config"  # JSON list of fan entries

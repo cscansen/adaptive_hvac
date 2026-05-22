@@ -15,22 +15,38 @@ from .const import (
     SCAN_INTERVAL_MINUTES,
     DEFAULT_COMFORT_UPPER,
     DEFAULT_PASSIVE_THRESHOLD,
+    DEFAULT_PASSIVE_HUMID_THRESHOLD,
     DEFAULT_ESCALATE_THRESHOLD,
     DEFAULT_EMERGENCY_THRESHOLD,
+    DEFAULT_COMFORT_SPEED,
     DEFAULT_PASSIVE_FAN_SPEED,
+    DEFAULT_WINDOW_FAN_SPEED,
+    DEFAULT_PRECOOL_FAN_SPEED,
     DEFAULT_ESCALATE_FAN_SPEED,
+    DEFAULT_EMERGENCY_FAN_SPEED,
+    DEFAULT_WINDOWS_SENSOR,
     DEFAULT_AC_SETPOINT,
     DEFAULT_HEAT_THRESHOLD,
     DEFAULT_HEAT_SETPOINT,
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_SETBACK_COOL_TEMP,
     DEFAULT_SETBACK_HEAT_TEMP,
-    DEFAULT_NIGHT_SETBACK_TEMP,
     DEFAULT_UNOCCUPIED_HOURS,
+    DEFAULT_RETURN_HOME_COOL_SETPOINT,
+    DEFAULT_RETURN_HOME_HEAT_SETPOINT,
     DEFAULT_PRECOOL_TRIGGER,
     DEFAULT_PREHEAT_TRIGGER,
+    DEFAULT_AC_TRIGGER_SOLAR_WATTS,
+    DEFAULT_AC_SOLAR_WINDOW_START,
+    DEFAULT_AC_SOLAR_WINDOW_END,
+    DEFAULT_AC_TRIGGER_HUMIDITY,
+    DEFAULT_WINDOW_FAN_SPEED,
+    DEFAULT_PASSIVE_COOLING_ENABLED,
+    DEFAULT_WHOLE_HOUSE_FAN_ENTITY,
     DEFAULT_SUMMER_THRESHOLD,
     DEFAULT_WINTER_THRESHOLD,
+    DEFAULT_IS_PRIMARY_ZONE,
+    DEFAULT_AUTO_CONTROL_ENABLED,
 )
 from .logic import (
     ZoneState,
@@ -121,14 +137,24 @@ class ZoneCoordinator(DataUpdateCoordinator):
         return state and state.state == "on" if state else True
 
     def _read_fan_claims(self) -> set[str]:
-        """Get set of claimed fan entity IDs."""
+        """Get set of claimed fan entity IDs (from per-fan lock entities in fan_config)."""
         claimed = set()
-        fan_locks = self.zone_config.get("fan_lock_entities", [])
-        for lock_entity in fan_locks:
-            state = self.hass.states.get(lock_entity)
-            if state and state.state == "on":
-                claimed.add(lock_entity)
+        fan_config = self.zone_config.get("fan_config", [])
+        for fan_entry in fan_config:
+            lock_entity = fan_entry.get("fan_lock_entity")
+            if lock_entity:
+                state = self.hass.states.get(lock_entity)
+                if state and state.state == "on":
+                    claimed.add(fan_entry.get("fan_id"))
         return claimed
+
+    def _read_auto_control_enabled(self) -> bool:
+        """Check if zone auto-control switch is on."""
+        auto_control_entity = f"switch.adaptive_hvac_{self.zone_name.lower().replace(' ', '_')}_auto"
+        state = self.hass.states.get(auto_control_entity)
+        if state:
+            return state.state == "on"
+        return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
     def _calculate_trend(self) -> float:
         """
@@ -182,6 +208,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
             window_open=window_open,
             zone_occupied=zone_occupied,
             current_mode=self.last_decision.mode if self.last_decision else "idle",
+            is_primary_zone=self.zone_config.get("is_primary_zone", DEFAULT_IS_PRIMARY_ZONE),
+            windows_assumed_open=False,  # Will be set by SystemCoordinator
         )
 
         # Track mode age
@@ -192,24 +220,20 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
         zone.mode_age_min = (datetime.now() - self._mode_entered_at).total_seconds() / 60
 
-        # Build config
+        # Build zone config (cooling thresholds + per-mode fan speeds only; heating is global)
         cfg = ZoneConfig(
             comfort_upper=self.zone_config.get("comfort_upper", DEFAULT_COMFORT_UPPER),
             passive_threshold=self.zone_config.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
+            passive_humid_threshold=self.zone_config.get("passive_humid_threshold", DEFAULT_PASSIVE_HUMID_THRESHOLD),
             escalate_threshold=self.zone_config.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
             emergency_threshold=self.zone_config.get("emergency_threshold", DEFAULT_EMERGENCY_THRESHOLD),
+            comfort_speed=self.zone_config.get("comfort_speed", DEFAULT_COMFORT_SPEED),
             passive_fan_speed=self.zone_config.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
+            window_fan_speed=self.zone_config.get("window_fan_speed", DEFAULT_WINDOW_FAN_SPEED),
+            precool_fan_speed=self.zone_config.get("precool_fan_speed", DEFAULT_PRECOOL_FAN_SPEED),
             escalate_fan_speed=self.zone_config.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
+            emergency_fan_speed=self.zone_config.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
             ac_setpoint=self.zone_config.get("ac_setpoint", DEFAULT_AC_SETPOINT),
-            heat_threshold=self.zone_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD),
-            heat_setpoint=self.zone_config.get("heat_setpoint", DEFAULT_HEAT_SETPOINT),
-            emergency_heat_threshold=self.zone_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD),
-            setback_cool_temp=self.zone_config.get("setback_cool_temp", DEFAULT_SETBACK_COOL_TEMP),
-            setback_heat_temp=self.zone_config.get("setback_heat_temp", DEFAULT_SETBACK_HEAT_TEMP),
-            night_setback_temp=self.zone_config.get("night_setback_temp", DEFAULT_NIGHT_SETBACK_TEMP),
-            unoccupied_hours=self.zone_config.get("unoccupied_hours", DEFAULT_UNOCCUPIED_HOURS),
-            precool_trigger=self.zone_config.get("precool_trigger", DEFAULT_PRECOOL_TRIGGER),
-            preheat_trigger=self.zone_config.get("preheat_trigger", DEFAULT_PREHEAT_TRIGGER),
         )
 
         # Placeholder: system state (will be filled by SystemCoordinator)
@@ -326,6 +350,15 @@ class SystemCoordinator(DataUpdateCoordinator):
         # In real implementation, would track last occupancy timestamp
         return occupied, 0.0 if occupied else 8.0
 
+    def _read_windows_assumed_open(self) -> bool:
+        """Read global windows open sensor."""
+        windows_entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
+        if not windows_entity:
+            return False
+
+        state = self.hass.states.get(windows_entity)
+        return state and state.state == "on" if state else False
+
     async def _async_update_data(self) -> SystemDecision:
         """Fetch zone decisions and compute system decision."""
         # Get all zone decisions (trigger zone coordinators)
@@ -352,6 +385,7 @@ class SystemCoordinator(DataUpdateCoordinator):
         solar_w = self._read_solar()
         sleep_posture = self._read_sleep_posture()
         house_occupied, unoccupied_hours = self._read_house_occupancy()
+        windows_assumed_open = self._read_windows_assumed_open()
 
         # Read configuration flags
         manual_override = self.system_config.get("manual_override", False)
@@ -385,11 +419,30 @@ class SystemCoordinator(DataUpdateCoordinator):
             hour_of_day=dt_util.now().hour,
             season=derived_season,
             season_override=season_override,
+            windows_assumed_open=windows_assumed_open,
         )
 
         cfg = SystemConfig(
             summer_threshold=self.system_config.get("summer_threshold", DEFAULT_SUMMER_THRESHOLD),
             winter_threshold=self.system_config.get("winter_threshold", DEFAULT_WINTER_THRESHOLD),
+            ac_enabled=self.system_config.get("ac_enabled", True),
+            ac_setpoint=self.system_config.get("ac_setpoint", DEFAULT_AC_SETPOINT),
+            ac_trigger_solar_watts=self.system_config.get("ac_trigger_solar_watts", DEFAULT_AC_TRIGGER_SOLAR_WATTS),
+            ac_solar_window_start=self.system_config.get("ac_solar_window_start", DEFAULT_AC_SOLAR_WINDOW_START),
+            ac_solar_window_end=self.system_config.get("ac_solar_window_end", DEFAULT_AC_SOLAR_WINDOW_END),
+            ac_trigger_humidity=self.system_config.get("ac_trigger_humidity", DEFAULT_AC_TRIGGER_HUMIDITY),
+            heat_threshold=self.system_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD),
+            heat_setpoint=self.system_config.get("heat_setpoint", DEFAULT_HEAT_SETPOINT),
+            emergency_heat_threshold=self.system_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD),
+            setback_cool_temp=self.system_config.get("setback_cool_temp", DEFAULT_SETBACK_COOL_TEMP),
+            setback_heat_temp=self.system_config.get("setback_heat_temp", DEFAULT_SETBACK_HEAT_TEMP),
+            unoccupied_hours=self.system_config.get("unoccupied_hours", DEFAULT_UNOCCUPIED_HOURS),
+            return_home_cool_setpoint=self.system_config.get("return_home_cool_setpoint", DEFAULT_RETURN_HOME_COOL_SETPOINT),
+            return_home_heat_setpoint=self.system_config.get("return_home_heat_setpoint", DEFAULT_RETURN_HOME_HEAT_SETPOINT),
+            precool_trigger=self.system_config.get("precool_trigger", DEFAULT_PRECOOL_TRIGGER),
+            preheat_trigger=self.system_config.get("preheat_trigger", DEFAULT_PREHEAT_TRIGGER),
+            window_fan_speed=self.system_config.get("window_fan_speed", DEFAULT_WINDOW_FAN_SPEED),
+            passive_cooling_enabled=self.system_config.get("passive_cooling_enabled", DEFAULT_PASSIVE_COOLING_ENABLED),
         )
 
         # Decide

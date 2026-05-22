@@ -38,6 +38,8 @@ class ZoneState:
     zone_occupied: bool = True
     mode_age_min: float = 0.0             # minutes in current mode
     current_mode: str = "idle"
+    is_primary_zone: bool = False         # only primary zone gates AC escalation
+    windows_assumed_open: bool = False    # global windows sensor state
 
 
 @dataclass
@@ -58,6 +60,7 @@ class SystemState:
     hour_of_day: int = 0
     season: str = "shoulder"              # derived season
     season_override: str = "auto"         # auto or explicit override
+    windows_assumed_open: bool = False    # global windows open sensor
 
 
 @dataclass
@@ -84,48 +87,60 @@ class SystemDecision:
 
 @dataclass
 class ZoneConfig:
-    """Configuration for a zone."""
+    """Configuration for a zone (cooling thresholds only; heating/setback are global)."""
     # Comfort thresholds (°F)
     comfort_upper: float = 70.0
     passive_threshold: float = 72.0
+    passive_humid_threshold: float = 55.0
     escalate_threshold: float = 74.0
     emergency_threshold: float = 78.0
 
-    # Fan speeds (%)
-    passive_fan_speed: int = 33
-    escalate_fan_speed: int = 50
-    window_fan_speed: int = 25
-    precool_fan_speed: int = 25
+    # Fan speeds — per mode (% or None to skip step)
+    comfort_speed: int | None = 0
+    passive_fan_speed: int | None = 33
+    window_fan_speed: int | None = 25
+    precool_fan_speed: int | None = 25
+    escalate_fan_speed: int | None = 50
+    emergency_fan_speed: int | None = 100
 
-    # Setpoints (°F)
+    # AC setpoint (global but referenced here)
     ac_setpoint: float = 68.0
+
+
+@dataclass
+class SystemConfig:
+    """Configuration for the system (global: AC, heating, setback, windows, forecast)."""
+    # Season thresholds (°F)
+    summer_threshold: float = 75.0
+    winter_threshold: float = 40.0
+
+    # AC control
+    ac_enabled: bool = True
+    ac_setpoint: float = 68.0
+    ac_trigger_solar_watts: float = 2000.0
+    ac_solar_window_start: int = 10
+    ac_solar_window_end: int = 15
+    ac_trigger_humidity: float = 55.0
+
+    # Heating (global, not per-zone)
     heat_threshold: float = 68.0
     heat_setpoint: float = 68.0
     emergency_heat_threshold: float = 55.0
 
-    # Setbacks (°F)
+    # Setback & occupancy
     setback_cool_temp: float = 76.0
     setback_heat_temp: float = 62.0
-    night_setback_temp: float = 62.0
-
-    # Durations (minutes)
     unoccupied_hours: float = 8.0
+    return_home_cool_setpoint: float = 74.0
+    return_home_heat_setpoint: float = 68.0
 
     # Forecast triggers (°F)
     precool_trigger: float = 92.0
     preheat_trigger: float = 30.0
 
-
-@dataclass
-class SystemConfig:
-    """Configuration for the system."""
-    # Season thresholds (°F)
-    summer_threshold: float = 75.0
-    winter_threshold: float = 40.0
-
-    # Forecast triggers
-    precool_trigger: float = 92.0
-    preheat_trigger: float = 30.0
+    # Windows & passive cooling
+    window_fan_speed: float = 25.0
+    passive_cooling_enabled: bool = True
 
     # Hysteresis (polls)
     season_hysteresis_polls: int = 3
@@ -212,8 +227,8 @@ def decide_zone(
         )
 
     # Emergency heating (any season)
-    if zone.temp <= cfg.emergency_heat_threshold:
-        reasoning.append(f"Temp {zone.temp:.1f}°F ≤ emergency heat {cfg.emergency_heat_threshold}°F")
+    if zone.temp <= sys_cfg.emergency_heat_threshold:
+        reasoning.append(f"Temp {zone.temp:.1f}°F ≤ emergency heat {sys_cfg.emergency_heat_threshold}°F")
         return ZoneDecision(
             mode="emergency_heating",
             fan_commands={},
@@ -224,37 +239,37 @@ def decide_zone(
         )
 
     # Setback: unoccupied 8+ hours
-    if sys_state.unoccupied_hours >= cfg.unoccupied_hours:
-        reasoning.append(f"Unoccupied {sys_state.unoccupied_hours:.1f}h ≥ {cfg.unoccupied_hours}h")
+    if sys_state.unoccupied_hours >= sys_cfg.unoccupied_hours:
+        reasoning.append(f"Unoccupied {sys_state.unoccupied_hours:.1f}h ≥ {sys_cfg.unoccupied_hours}h")
         if season == "summer":
-            reasoning.append(f"Summer setback: cool to {cfg.setback_cool_temp}°F")
+            reasoning.append(f"Summer setback: cool to {sys_cfg.setback_cool_temp}°F")
             return ZoneDecision(
                 mode="setback_unoccupied",
                 fan_commands={},
-                thermal_request=f"cool_{cfg.setback_cool_temp:.0f}",
+                thermal_request=f"cool_{sys_cfg.setback_cool_temp:.0f}",
                 urgency=1,
                 status=f"{zone.zone_name}: SETBACK UNOCCUPIED {zone.temp:.1f}°F",
                 reasoning=reasoning,
             )
         elif season == "winter":
-            reasoning.append(f"Winter setback: heat to {cfg.setback_heat_temp}°F")
+            reasoning.append(f"Winter setback: heat to {sys_cfg.setback_heat_temp}°F")
             return ZoneDecision(
                 mode="setback_unoccupied",
                 fan_commands={},
-                thermal_request=f"heat_{cfg.setback_heat_temp:.0f}",
+                thermal_request=f"heat_{sys_cfg.setback_heat_temp:.0f}",
                 urgency=1,
                 status=f"{zone.zone_name}: SETBACK UNOCCUPIED {zone.temp:.1f}°F",
                 reasoning=reasoning,
             )
 
-    # Night setback (sleep posture on)
+    # Night setback (sleep posture on) — for master bedroom, use lower setpoint
     if sys_state.sleep_posture:
         reasoning.append("Sleep posture active")
-        reasoning.append(f"Night setback to {cfg.night_setback_temp}°F")
+        reasoning.append(f"Night setback to {sys_cfg.setback_heat_temp}°F")
         return ZoneDecision(
             mode="setback_night",
             fan_commands={},
-            thermal_request=f"heat_{cfg.night_setback_temp:.0f}",
+            thermal_request=f"heat_{sys_cfg.setback_heat_temp:.0f}",
             urgency=2,
             status=f"{zone.zone_name}: NIGHT SETBACK {zone.temp:.1f}°F",
             reasoning=reasoning,
@@ -263,11 +278,11 @@ def decide_zone(
     # Pre-cool: morning ventilation on hot days
     if (
         sys_state.hour_of_day in range(6, 11)  # 6am-10am
-        and sys_state.forecast_high > cfg.precool_trigger
+        and sys_state.forecast_high > sys_cfg.precool_trigger
         and sys_state.outdoor_temp < zone.temp
         and season == "summer"
     ):
-        reasoning.append(f"Forecast {sys_state.forecast_high:.0f}°F > precool {cfg.precool_trigger:.0f}°F")
+        reasoning.append(f"Forecast {sys_state.forecast_high:.0f}°F > precool {sys_cfg.precool_trigger:.0f}°F")
         reasoning.append(f"Outdoor {sys_state.outdoor_temp:.1f}°F < zone {zone.temp:.1f}°F — ventilate now")
         fan_cmds = {f: cfg.precool_fan_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
         return ZoneDecision(
@@ -282,10 +297,10 @@ def decide_zone(
     # Pre-heat: pre-warm before cold night
     if (
         sys_state.hour_of_day in range(16, 22)  # 4pm-9pm
-        and sys_state.forecast_low < cfg.preheat_trigger
+        and sys_state.forecast_low < sys_cfg.preheat_trigger
         and season == "winter"
     ):
-        reasoning.append(f"Forecast low {sys_state.forecast_low:.0f}°F < preheat {cfg.preheat_trigger:.0f}°F")
+        reasoning.append(f"Forecast low {sys_state.forecast_low:.0f}°F < preheat {sys_cfg.preheat_trigger:.0f}°F")
         reasoning.append("Pre-heating before cold night")
         return ZoneDecision(
             mode="pre_heat",
@@ -355,12 +370,12 @@ def decide_zone(
         )
 
     # Normal heating (winter)
-    if zone.temp <= cfg.heat_threshold and season == "winter":
-        reasoning.append(f"Winter: temp {zone.temp:.1f}°F ≤ heat threshold {cfg.heat_threshold}°F")
+    if zone.temp <= sys_cfg.heat_threshold and season == "winter":
+        reasoning.append(f"Winter: temp {zone.temp:.1f}°F ≤ heat threshold {sys_cfg.heat_threshold}°F")
         return ZoneDecision(
             mode="heating_normal",
             fan_commands={},
-            thermal_request=f"heat_{cfg.heat_setpoint:.0f}",
+            thermal_request=f"heat_{sys_cfg.heat_setpoint:.0f}",
             urgency=2,
             status=f"{zone.zone_name}: HEATING {zone.temp:.1f}°F",
             reasoning=reasoning,
