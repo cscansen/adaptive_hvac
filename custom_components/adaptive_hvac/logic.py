@@ -378,6 +378,23 @@ def decide_zone(
             reasoning=reasoning,
         )
 
+    # System-level windows open: apply window_fan_speed if system windows assumed open
+    if zone.windows_assumed_open and zone.temp >= cfg.passive_threshold and season == "summer":
+        reasoning.append(f"System windows assumed open, temp {zone.temp:.1f}°F ≥ passive {cfg.passive_threshold}°F")
+        # Use system window_fan_speed from sys_cfg
+        window_speed = sys_cfg.window_fan_speed if sys_cfg.window_fan_speed is not None else cfg.window_fan_speed
+        fan_cmds = {f: window_speed for f in (zone.zone_name,) if f not in zone.fans_claimed}
+        return ZoneDecision(
+            mode="passive_windows_open",
+            zone_name=zone.zone_name,
+            is_primary_zone=zone.is_primary_zone,
+            fan_commands=fan_cmds,
+            thermal_request="off",
+            urgency=2,
+            status=f"{zone.zone_name}: PASSIVE (SYSTEM WINDOWS OPEN) {zone.temp:.1f}°F",
+            reasoning=reasoning,
+        )
+
     # Passive cooling (closed windows, summer)
     if (
         zone.temp >= cfg.passive_threshold
@@ -518,32 +535,40 @@ def decide_system(
     thermostat_setpoint = None
     whf_mode = "auto"
 
-    if heat_requests:
-        thermostat_hvac_mode = "heat"
-        setpoints = [float(r.split("_")[1]) for r in heat_requests]
-        thermostat_setpoint = max(setpoints)  # coldest zone wins
-        reasoning.append(f"Heat request: {thermostat_setpoint:.0f}°F")
-    elif cool_requests:
-        thermostat_hvac_mode = "cool"
-        setpoints = [float(r.split("_")[1]) for r in cool_requests]
-        thermostat_setpoint = min(setpoints)  # hottest zone wins
-        reasoning.append(f"Cool request: {thermostat_setpoint:.0f}°F")
-    else:
-        reasoning.append("No thermal requests — holding current setpoint")
-
-    # Whole-house fan control
-    pre_cool_active = any(d.mode == "pre_cool" for d in zone_decisions)
-    passive_active = any(d.mode in ["passive_cooling", "passive_windows_open"] for d in zone_decisions)
-    equalization_active = any(d.mode == "equalization" for d in zone_decisions)
-
-    if pre_cool_active:
+    # Windows-open override (summer only): thermostat OFF, whole-house fan ON
+    if sys_state.windows_assumed_open and season == "summer":
+        reasoning.append("Windows assumed open (summer) — thermostat OFF, whole-house fan ON")
+        thermostat_hvac_mode = "off"
+        thermostat_setpoint = None
         whf_mode = "on"
-        reasoning.append("Pre-cooling: whole-house fan ON")
-    elif passive_active or equalization_active:
-        whf_mode = "on"
-        reasoning.append("Passive/equalization: whole-house fan ON")
     else:
-        whf_mode = "auto"
+        # Normal thermostat logic
+        if heat_requests:
+            thermostat_hvac_mode = "heat"
+            setpoints = [float(r.split("_")[1]) for r in heat_requests]
+            thermostat_setpoint = max(setpoints)  # coldest zone wins
+            reasoning.append(f"Heat request: {thermostat_setpoint:.0f}°F")
+        elif cool_requests:
+            thermostat_hvac_mode = "cool"
+            setpoints = [float(r.split("_")[1]) for r in cool_requests]
+            thermostat_setpoint = min(setpoints)  # hottest zone wins
+            reasoning.append(f"Cool request: {thermostat_setpoint:.0f}°F")
+        else:
+            reasoning.append("No thermal requests — holding current setpoint")
+
+        # Whole-house fan control
+        pre_cool_active = any(d.mode == "pre_cool" for d in zone_decisions)
+        passive_active = any(d.mode in ["passive_cooling", "passive_windows_open"] for d in zone_decisions)
+        equalization_active = any(d.mode == "equalization" for d in zone_decisions)
+
+        if pre_cool_active:
+            whf_mode = "on"
+            reasoning.append("Pre-cooling: whole-house fan ON")
+        elif passive_active or equalization_active:
+            whf_mode = "on"
+            reasoning.append("Passive/equalization: whole-house fan ON")
+        else:
+            whf_mode = "auto"
 
     # Build status string
     zone_statuses = [d.status for d in zone_decisions if d.status]
