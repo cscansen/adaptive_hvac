@@ -115,8 +115,8 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_SLEEP_POSTURE, default=DEFAULT_SLEEP_POSTURE): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="input_boolean")
             ),
-            vol.Optional(CONF_OCCUPANCY, default=[]): selector.EntitiesSelector(
-                selector.EntitiesSelectorConfig(domain="binary_sensor")
+            vol.Optional(CONF_OCCUPANCY, default=[]): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
             ),
             vol.Optional(CONF_AC_ENABLED, default=True): selector.BooleanSelector(),
             vol.Optional(CONF_AC_SETPOINT, default=DEFAULT_AC_SETPOINT): selector.NumberSelector(
@@ -181,8 +181,8 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_FLOOR, default=""): str,
             vol.Optional(CONF_IS_PRIMARY_ZONE, default=DEFAULT_IS_PRIMARY_ZONE): selector.BooleanSelector(),
             vol.Optional(CONF_AUTO_CONTROL_ENABLED, default=DEFAULT_AUTO_CONTROL_ENABLED): selector.BooleanSelector(),
-            vol.Required(CONF_TEMP_SENSORS): selector.EntitiesSelector(
-                selector.EntitiesSelectorConfig(domain="sensor")
+            vol.Required(CONF_TEMP_SENSORS): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", multiple=True)
             ),
             vol.Optional(CONF_HUMIDITY_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
