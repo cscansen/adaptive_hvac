@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.3] - 2026-05-22
+
+### Fixed
+- Fixed `ImportError: cannot import name 'DEFAULT_NIGHT_SETBACK_TEMP'` by removing obsolete constant reference in `number.py` and mapping to `setback_heat_temp` config key
+
 ## [0.2.2] - 2026-05-22
 
 ### Fixed
