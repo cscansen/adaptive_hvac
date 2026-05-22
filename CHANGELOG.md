@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.4] - 2026-05-22
+
+### Fixed
+- Fixed 500 error in options flow by correcting NumberSelectorConfig parameter from `unit_of_measurement=` to `unit=` for Home Assistant 2024.1+ compatibility
+
 ## [0.2.3] - 2026-05-22
 
 ### Fixed
