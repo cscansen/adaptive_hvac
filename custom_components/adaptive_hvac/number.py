@@ -22,7 +22,6 @@ from .const import (
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_SETBACK_COOL_TEMP,
     DEFAULT_SETBACK_HEAT_TEMP,
-    DEFAULT_NIGHT_SETBACK_TEMP,
     DEFAULT_UNOCCUPIED_HOURS,
     DEFAULT_PRECOOL_TRIGGER,
     DEFAULT_PREHEAT_TRIGGER,
@@ -378,11 +377,11 @@ class NightSetbackTempNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
     @property
     def native_value(self) -> float:
         """Return current value."""
-        return self.coordinator.system_config.get("night_setback_temp", DEFAULT_NIGHT_SETBACK_TEMP)
+        return self.coordinator.system_config.get("setback_heat_temp", DEFAULT_SETBACK_HEAT_TEMP)
 
     async def async_set_native_value(self, value: float) -> None:
         """Update value."""
-        self.coordinator.system_config["night_setback_temp"] = value
+        self.coordinator.system_config["setback_heat_temp"] = value
         self.async_write_ha_state()
 
 
