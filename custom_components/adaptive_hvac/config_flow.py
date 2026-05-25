@@ -388,7 +388,9 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
                 ),
             }),
-            description_placeholders={"step_title": "Step 3/3: Temperature Thresholds"},
+            description_placeholders={
+                "info": "**Discrete Fan Speeds:** All fan speeds (system and zone level) are percentages (0-100%). Your fans with discrete speeds (33/66/99%) are automatically mapped by Home Assistant. For example: 25% → 33%, 50% → 66%, 75% → 99%."
+            },
         )
 
     async def async_step_zone(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
