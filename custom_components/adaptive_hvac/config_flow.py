@@ -257,6 +257,9 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="system",
             data_schema=vol.Schema(_system_schema_dict({})),
+            description_placeholders={
+                "info": "System-level config: thermostat, weather, house-wide sensors (windows, sleep mode, occupancy), and global thresholds that apply to all zones. Per-room settings (temp sensors, humidity, fans, room-specific thresholds) go in zone config. System decides when AC/heat runs; zones decide fan speeds per mode."
+            },
         )
 
     async def async_step_zone(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
@@ -281,6 +284,9 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required("zone_name", default=user_input.get("zone_name", "") if user_input else ""): str,
                 **_zone_schema_dict(user_input or {}),
             }),
+            description_placeholders={
+                "info": "Zone-level config: per-room settings. Temperature sensors (required) + optional humidity/window/occupancy sensors. Fan speed thresholds control when/how fast room fans run in each mode (comfort/passive/escalate/emergency). System coordinator aggregates all zone decisions to control the thermostat."
+            },
         )
 
     @staticmethod
