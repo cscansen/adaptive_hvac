@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.13] - 2026-05-25
+
+### Fixed
+- Fixed config flow EntitySelector implementation by refactoring to match `adaptive_irrigation` pattern: schema generation moved to helper functions (`_system_schema_dict`, `_zone_schema_dict`) that take defaults dict as parameter. EntitySelector now properly handles defaults for both single and multi-select entity fields.
+
 ## [0.2.12] - 2026-05-25
 
 ### Fixed
