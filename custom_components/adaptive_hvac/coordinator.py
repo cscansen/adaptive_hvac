@@ -510,13 +510,6 @@ class SystemCoordinator(DataUpdateCoordinator):
             passive_fan_threshold=self.system_config.get("passive_fan_threshold", 70.0),
             escalate_enabled_downstairs_temp=self.system_config.get("escalate_enabled_downstairs_temp", 68.0),
             escalate_enabled_upstairs_temp=self.system_config.get("escalate_enabled_upstairs_temp", 74.0),
-            ac_setpoint=self.system_config.get("ac_setpoint", DEFAULT_AC_SETPOINT),
-            heat_setpoint=self.system_config.get("heat_setpoint", DEFAULT_HEAT_SETPOINT),
-            heat_threshold=self.system_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD),
-            emergency_heat_threshold=self.system_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD),
-            setback_cool_temp=self.system_config.get("setback_cool_temp", DEFAULT_SETBACK_COOL_TEMP),
-            setback_heat_temp=self.system_config.get("setback_heat_temp", DEFAULT_SETBACK_HEAT_TEMP),
-            ac_trigger_solar_watts=self.system_config.get("ac_trigger_solar_watts", DEFAULT_AC_TRIGGER_SOLAR_WATTS),
         )
 
         # Decide
