@@ -250,8 +250,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title="Adaptive HVAC System",
                 data={
                     "entry_type": ENTRY_TYPE_SYSTEM,
-                    "thermostat_entity": user_input.get("thermostat_entity"),
-                    "weather_entity": user_input.get("weather_entity"),
+                    **user_input,
                 },
             )
 
