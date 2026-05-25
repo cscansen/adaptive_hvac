@@ -105,36 +105,57 @@ class ZoneCoordinator(DataUpdateCoordinator):
         return sum(temps) / len(temps) if temps else 0.0
 
     def _read_humidity(self) -> Optional[float]:
-        """Read humidity sensor."""
-        humidity_entity = self.zone_config.get("humidity_sensor")
-        if not humidity_entity:
+        """Read humidity sensor(s) — average if multiple."""
+        humidity_entities = self.zone_config.get("humidity_sensor", [])
+        if not humidity_entities:
             return None
 
-        state = self.hass.states.get(humidity_entity)
-        if state and state.state not in ("unknown", "unavailable"):
-            try:
-                return float(state.state)
-            except ValueError:
-                pass
-        return None
+        # Handle both single entity (string) and multiple (list) for backwards compatibility
+        if isinstance(humidity_entities, str):
+            humidity_entities = [humidity_entities]
+
+        humidity_values = []
+        for entity in humidity_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    humidity_values.append(float(state.state))
+                except ValueError:
+                    pass
+
+        return sum(humidity_values) / len(humidity_values) if humidity_values else None
 
     def _read_window_open(self) -> bool:
-        """Check if zone window is open."""
-        window_entity = self.zone_config.get("window_sensor")
-        if not window_entity:
+        """Check if zone window(s) are open — True if ANY window is open."""
+        window_entities = self.zone_config.get("window_sensor", [])
+        if not window_entities:
             return False
 
-        state = self.hass.states.get(window_entity)
-        return state and state.state == "on" if state else False
+        # Handle both single entity (string) and multiple (list) for backwards compatibility
+        if isinstance(window_entities, str):
+            window_entities = [window_entities]
+
+        for entity in window_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state == "on":
+                return True
+        return False
 
     def _read_occupancy(self) -> bool:
-        """Check if zone is occupied."""
-        occupancy_entity = self.zone_config.get("zone_occupancy_sensor")
-        if not occupancy_entity:
+        """Check if zone is occupied — True if ANY occupancy sensor is occupied."""
+        occupancy_entities = self.zone_config.get("occupancy_sensor", [])
+        if not occupancy_entities:
             return True  # Default to occupied if not specified
 
-        state = self.hass.states.get(occupancy_entity)
-        return state and state.state == "on" if state else True
+        # Handle both single entity (string) and multiple (list) for backwards compatibility
+        if isinstance(occupancy_entities, str):
+            occupancy_entities = [occupancy_entities]
+
+        for entity in occupancy_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state == "on":
+                return True
+        return False
 
     def _read_fan_claims(self) -> set[str]:
         """Get set of claimed fan entity IDs (from per-fan lock entities in fan_config)."""

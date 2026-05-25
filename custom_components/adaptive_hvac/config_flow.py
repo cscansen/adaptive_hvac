@@ -134,21 +134,21 @@ def _zone_schema_dict(defaults: dict) -> dict:
         ),
         vol.Optional(
             "humidity_sensor",
-            default=defaults.get("humidity_sensor", ""),
+            default=defaults.get("humidity_sensor", []),
         ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor")
+            selector.EntitySelectorConfig(domain="sensor", multiple=True)
         ),
         vol.Optional(
             "window_sensor",
-            default=defaults.get("window_sensor", ""),
+            default=defaults.get("window_sensor", []),
         ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="binary_sensor")
+            selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
         ),
         vol.Optional(
             "occupancy_sensor",
-            default=defaults.get("occupancy_sensor", ""),
+            default=defaults.get("occupancy_sensor", []),
         ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="binary_sensor")
+            selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
         ),
         vol.Optional(
             "fans",
