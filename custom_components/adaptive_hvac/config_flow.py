@@ -453,10 +453,14 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
 
         defaults = {**self._entry.data, **self._entry.options}
 
-        # Normalize old string values to lists for multi-select fields
+        # Normalize values to lists for multi-select fields
         for field in ["occupancy_entities"]:
-            if field in defaults and isinstance(defaults[field], str):
-                defaults[field] = [defaults[field]] if defaults[field] else []
+            val = defaults.get(field)
+            if val is None or (isinstance(val, str) and not val):
+                defaults[field] = []
+            elif isinstance(val, str):
+                defaults[field] = [val]
+            # else: already a list
 
         return self.async_show_form(
             step_id="init",
@@ -511,10 +515,14 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
 
         defaults = {**self._entry.data, **self._entry.options}
 
-        # Normalize old string values to lists for multi-select fields
+        # Normalize values to lists for multi-select fields
         for field in ["humidity_sensor", "window_sensor", "occupancy_sensor"]:
-            if field in defaults and isinstance(defaults[field], str):
-                defaults[field] = [defaults[field]] if defaults[field] else []
+            val = defaults.get(field)
+            if val is None or (isinstance(val, str) and not val):
+                defaults[field] = []
+            elif isinstance(val, str):
+                defaults[field] = [val]
+            # else: already a list
 
         return self.async_show_form(
             step_id="init",
