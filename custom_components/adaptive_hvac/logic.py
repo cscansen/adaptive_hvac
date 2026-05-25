@@ -143,6 +143,11 @@ class SystemConfig:
     # Windows & passive cooling
     window_fan_speed: float = 25.0
     passive_cooling_enabled: bool = True
+    passive_fan_threshold: float = 70.0          # hottest zone above this → whole-house fan on (before passive fans)
+
+    # Equalization: only allow AC if both hottest AND coldest occupied zones exceed thresholds
+    escalate_enabled_downstairs_temp: float = 68.0   # coldest relevant zone must be above this
+    escalate_enabled_upstairs_temp: float = 74.0     # hottest relevant zone must be above this
 
     # Hysteresis (polls)
     season_hysteresis_polls: int = 3
@@ -541,6 +546,17 @@ def decide_system(
     if not active_zones:
         active_zones = sys_state.zone_states
 
+    # Compute relevant zones for equalization (occupied zones, or all zones if none have occupancy sensors)
+    relevant_zones = [z for z in active_zones if z.zone_occupied]
+    if not relevant_zones:
+        relevant_zones = active_zones
+
+    # Find hottest and coldest relevant zone temps
+    hottest_relevant_temp = max((z.temp for z in relevant_zones), default=70.0)
+    coldest_relevant_temp = min((z.temp for z in relevant_zones), default=68.0)
+
+    reasoning.append(f"Relevant zones: hottest={hottest_relevant_temp:.1f}°F, coldest={coldest_relevant_temp:.1f}°F")
+
     # Find primary zone decision — dynamic selection among active zones
     # Prefer configured primary zones, otherwise use highest-urgency active zone
     primary_zones_dyn = [
@@ -597,10 +613,16 @@ def decide_system(
             thermostat_setpoint = max(setpoints)  # coldest zone wins
             reasoning.append(f"Heat request: {thermostat_setpoint:.0f}°F")
         elif cool_requests:
-            thermostat_hvac_mode = "cool"
-            setpoints = [float(r.split("_")[1]) for r in cool_requests]
-            thermostat_setpoint = min(setpoints)  # hottest zone wins
-            reasoning.append(f"Cool request: {thermostat_setpoint:.0f}°F")
+            # Equalization check: only allow AC if BOTH hottest AND coldest zones exceed their thresholds
+            if hottest_relevant_temp >= cfg.escalate_enabled_upstairs_temp and coldest_relevant_temp >= cfg.escalate_enabled_downstairs_temp:
+                thermostat_hvac_mode = "cool"
+                setpoints = [float(r.split("_")[1]) for r in cool_requests]
+                thermostat_setpoint = min(setpoints)  # hottest zone wins
+                reasoning.append(f"Cool request: {thermostat_setpoint:.0f}°F (equalization: both zones meet threshold)")
+            else:
+                reasoning.append(f"Cool requested but equalization blocked: hottest {hottest_relevant_temp:.1f}°F < {cfg.escalate_enabled_upstairs_temp}°F OR coldest {coldest_relevant_temp:.1f}°F < {cfg.escalate_enabled_downstairs_temp}°F")
+                thermostat_hvac_mode = "off"
+                thermostat_setpoint = None
         else:
             reasoning.append("No thermal requests — holding current setpoint")
 
@@ -608,13 +630,17 @@ def decide_system(
         pre_cool_active = any(d.mode == "pre_cool" for d in zone_decisions)
         passive_active = any(d.mode in ["passive_cooling", "passive_windows_open"] for d in zone_decisions)
         equalization_active = any(d.mode == "equalization" for d in zone_decisions)
+        passive_fan_active = hottest_relevant_temp >= cfg.passive_fan_threshold
 
         if pre_cool_active:
             whf_mode = "on"
             reasoning.append("Pre-cooling: whole-house fan ON")
-        elif passive_active or equalization_active:
+        elif passive_fan_active or passive_active or equalization_active:
             whf_mode = "on"
-            reasoning.append("Passive/equalization: whole-house fan ON")
+            if passive_fan_active and not passive_active:
+                reasoning.append(f"Passive fan threshold ({cfg.passive_fan_threshold}°F) reached: whole-house fan ON (first stop-gap)")
+            else:
+                reasoning.append("Passive/equalization: whole-house fan ON")
         else:
             whf_mode = "auto"
 
