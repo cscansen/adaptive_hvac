@@ -4,6 +4,16 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.17] - 2026-05-25
+
+### Added
+- **Multi-select zone sensors**: Zone humidity, window, and occupancy sensors now support multiple entities (link multiple rooms as one zone)
+
+### Fixed
+- Config flow 500 error when editing existing zones with old data (string values now normalized to lists)
+- Humidity values properly averaged across multiple sensors
+- Window/occupancy logic: True if ANY sensor triggers
+
 ## [0.2.16] - 2026-05-25
 
 ### Added
