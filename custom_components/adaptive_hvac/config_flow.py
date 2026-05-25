@@ -21,12 +21,14 @@ def _system_schema_dict(defaults: dict) -> dict:
         vol.Required(
             "thermostat_entity",
             default=defaults.get("thermostat_entity", ""),
+            description="Thermostat (climate entity) to control. Primary zone's decisions gate thermostat mode/setpoint",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="climate")
         ),
         vol.Required(
             "weather_entity",
             default=defaults.get("weather_entity", ""),
+            description="Weather integration for forecast data (used for seasonal transitions)",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="weather")
         ),
@@ -39,66 +41,77 @@ def _zone_schema_dict(defaults: dict) -> dict:
         vol.Optional(
             "temp_sensors",
             default=defaults.get("temp_sensors", []),
+            description="Temperature sensor(s) to average for this zone (required for decisions)",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor", multiple=True)
         ),
         vol.Optional(
             "humidity_sensor",
             default=defaults.get("humidity_sensor", ""),
+            description="Hygrometer or humidity sensor. If humidity ≥55% AND temp ≥72°F in summer, triggers passive cooling (fans only, no AC)",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         ),
         vol.Optional(
             "window_sensor",
             default=defaults.get("window_sensor", ""),
+            description="Contact sensor for this zone's windows. Open = whole-house fan on, AC/heat off (system-wide check)",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="binary_sensor")
         ),
         vol.Optional(
             "occupancy_sensor",
             default=defaults.get("occupancy_sensor", ""),
+            description="Presence/occupancy sensor. Affects which zones are 'active' for primary zone selection",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="binary_sensor")
         ),
         vol.Optional(
             "fans",
             default=defaults.get("fans", []),
+            description="Fans to control in this zone (ceiling fans, portable fans, etc.)",
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="fan", multiple=True)
         ),
         vol.Optional(
             "comfort_upper",
             default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
+            description="Below this temp: fans off, AC off (comfortable)",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
         ),
         vol.Optional(
             "passive_threshold",
             default=defaults.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
+            description="Above this temp: fans on at passive speed, whole-house fan on, AC off (passive cooling)",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
         ),
         vol.Optional(
             "escalate_threshold",
             default=defaults.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
+            description="Above this temp for 30min: fans at escalate speed, AC on at 68°F (active cooling)",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
         ),
         vol.Optional(
             "passive_fan_speed",
             default=defaults.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
+            description="Fan speed (%) when in passive mode (passive threshold met, no AC)",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
         ),
         vol.Optional(
             "escalate_fan_speed",
             default=defaults.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
+            description="Fan speed (%) when escalating to AC (above escalate threshold)",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
         ),
         vol.Optional(
             "emergency_fan_speed",
             default=defaults.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
+            description="Fan speed (%) at emergency (above 78°F). Whole-house fan always on at max in emergency",
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
         ),
