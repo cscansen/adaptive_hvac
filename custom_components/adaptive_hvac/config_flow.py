@@ -53,6 +53,90 @@ def _system_schema_dict(defaults: dict) -> dict:
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
         ),
+        vol.Optional(
+            "windows_assumed_open_sensor",
+            default=defaults.get("windows_assumed_open_sensor", "binary_sensor.windows_assumed_open"),
+            description="Binary sensor: aggregated windows status (e.g., group, input_boolean, automation). If ON, thermostat OFF, whole-house fan ON",
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="binary_sensor")
+        ),
+        vol.Optional(
+            "sleep_posture_entity",
+            default=defaults.get("sleep_posture_entity", ""),
+            description="Input boolean: master bedroom sleep mode (gates heating during sleep, co-triggers cooling demand)",
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="input_boolean")
+        ),
+        vol.Optional(
+            "occupancy_entities",
+            default=defaults.get("occupancy_entities", []),
+            description="House-level occupancy sensors (multi-select). If all OFF for 8+ hours, triggers cooling/heating setback",
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
+        ),
+        vol.Optional(
+            "solar_entity",
+            default=defaults.get("solar_entity", ""),
+            description="Solar production sensor (W). Above ac_trigger_solar_watts during solar window, escalates AC (optional)",
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(
+            "ac_setpoint",
+            default=defaults.get("ac_setpoint", 68.0),
+            description="Temperature to cool to when AC is active (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "heat_setpoint",
+            default=defaults.get("heat_setpoint", 68.0),
+            description="Temperature to heat to when heating is active (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "heat_threshold",
+            default=defaults.get("heat_threshold", 68.0),
+            description="Below this temperature, heating activates (winter only) (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=55, max=72, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "emergency_heat_threshold",
+            default=defaults.get("emergency_heat_threshold", 55.0),
+            description="Below this temperature, emergency heat activates (any season) (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=40, max=60, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "setback_cool_temp",
+            default=defaults.get("setback_cool_temp", 76.0),
+            description="Cool setpoint when house is unoccupied 8+ hours (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "setback_heat_temp",
+            default=defaults.get("setback_heat_temp", 62.0),
+            description="Heat setpoint when house is unoccupied 8+ hours (°F)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=55, max=68, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "ac_trigger_solar_watts",
+            default=defaults.get("ac_trigger_solar_watts", 2000.0),
+            description="Solar production (W) above this during solar window triggers AC escalation (system-dependent; adjust for your array size)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=500, max=10000, step=100, unit_of_measurement="W")
+        ),
+        vol.Optional(
+            "window_fan_speed",
+            default=defaults.get("window_fan_speed", 25.0),
+            description="Fan speed (%) when windows are open (passive ventilation mode) (%)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
     }
 
 
