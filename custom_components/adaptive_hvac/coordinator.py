@@ -507,6 +507,9 @@ class SystemCoordinator(DataUpdateCoordinator):
             preheat_trigger=self.system_config.get("preheat_trigger", DEFAULT_PREHEAT_TRIGGER),
             window_fan_speed=self.system_config.get("window_fan_speed", DEFAULT_WINDOW_FAN_SPEED),
             passive_cooling_enabled=self.system_config.get("passive_cooling_enabled", DEFAULT_PASSIVE_COOLING_ENABLED),
+            passive_fan_threshold=self.system_config.get("passive_fan_threshold", 70.0),
+            escalate_enabled_downstairs_temp=self.system_config.get("escalate_enabled_downstairs_temp", 68.0),
+            escalate_enabled_upstairs_temp=self.system_config.get("escalate_enabled_upstairs_temp", 74.0),
         )
 
         # Decide
