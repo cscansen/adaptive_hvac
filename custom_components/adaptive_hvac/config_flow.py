@@ -139,36 +139,26 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(
+                vol.Optional(
                     "temp_sensors",
-                    default=defaults.get("temp_sensors", []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", multiple=True)
-                ),
+                    default=defaults.get("temp_sensors", ""),
+                ): str,
                 vol.Optional(
                     "humidity_sensor",
-                    default=defaults.get("humidity_sensor"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
+                    default=defaults.get("humidity_sensor", ""),
+                ): str,
                 vol.Optional(
                     "window_sensor",
-                    default=defaults.get("window_sensor"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
+                    default=defaults.get("window_sensor", ""),
+                ): str,
                 vol.Optional(
                     "occupancy_sensor",
-                    default=defaults.get("occupancy_sensor"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
+                    default=defaults.get("occupancy_sensor", ""),
+                ): str,
                 vol.Optional(
                     "fans",
-                    default=defaults.get("fans", []),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="fan", multiple=True)
-                ),
+                    default=defaults.get("fans", ""),
+                ): str,
                 vol.Optional(
                     "comfort_upper",
                     default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
