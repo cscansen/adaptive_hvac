@@ -4,6 +4,18 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.14] - 2026-05-25
+
+### Added
+- **Equalization mode**: Whole-house fan activation at lower temp (passive_fan_threshold, default 70°F) as first stop-gap before AC
+- **Multi-zone equalization logic**: AC only runs if BOTH hottest AND coldest occupied zones exceed their thresholds (escalate_enabled_upstairs_temp=74°F, escalate_enabled_downstairs_temp=68°F)
+- **Occupancy-aware equalization**: Only zones with occupancy sensors that are currently occupied count toward equalization; closed/unoccupied rooms don't gate AC
+- Field descriptions in config flow explaining fan speeds, thresholds, and whole-house fan behavior
+
+### Changed
+- Whole-house fan now activates when hottest occupied zone approaches passive threshold (70°F), not just at it
+- AC escalation gated by equalization logic: prevents AC from running just to balance zone temps
+
 ## [0.2.13] - 2026-05-25
 
 ### Fixed
