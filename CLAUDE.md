@@ -407,12 +407,21 @@ Zone respects legacy fan lock system:
 - Zone coordinator runs independently on SCAN_INTERVAL (3 min); system coordinator aggregates
 
 ### Release Checklist
-When releasing a new version:
-1. Update `manifest.json` version field
-2. Add entry to `CHANGELOG.md` with section for Added/Changed/Fixed/Removed
-3. Create GitHub Release via `gh release create vX.Y.Z` with release notes
-4. Update HACS if version bumps significantly
-5. Test config flow loads without errors before release
+**CRITICAL: Never tag/release until code is final. Tags left behind by later commits cause HACS users to download broken code.**
+
+Correct workflow:
+1. Finalize ALL code changes on master
+2. Test thoroughly (including on HA)
+3. Commit final changes: `git add -A && git commit -m "..."`
+4. Verify: `git log -1 --oneline` — this is your release commit
+5. Update `manifest.json` version field
+6. Add entry to `CHANGELOG.md` (Added/Changed/Fixed/Removed)
+7. Create GitHub Release: `gh release create vX.Y.Z --notes "..."` (this tags HEAD)
+8. Verify release points to correct commit: `git show-ref vX.Y.Z` should match `git log -1`
+9. **DO NOT COMMIT ANYTHING AFTER CREATING THE RELEASE**
+10. HACS users will download exactly what the release points to
+
+**Why this matters**: HACS downloads from GitHub releases. If you tag at commit A, then commit B, the release stays at A. HACS users get stale code. In 2026-05-25, v0.2.15 was released at commit 27b5040, then commit b6f1b0f was added. HACS users got the broken 27b5040 code and spent hours debugging import errors that were already fixed in b6f1b0f.
 
 **CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
 
