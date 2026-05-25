@@ -15,6 +15,96 @@ from .const import (
 )
 
 
+def _system_schema_dict(defaults: dict) -> dict:
+    """Generate system schema with defaults."""
+    return {
+        vol.Required(
+            "thermostat_entity",
+            default=defaults.get("thermostat_entity", ""),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="climate")
+        ),
+        vol.Required(
+            "weather_entity",
+            default=defaults.get("weather_entity", ""),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="weather")
+        ),
+    }
+
+
+def _zone_schema_dict(defaults: dict) -> dict:
+    """Generate zone schema with defaults."""
+    return {
+        vol.Optional(
+            "temp_sensors",
+            default=defaults.get("temp_sensors", []),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", multiple=True)
+        ),
+        vol.Optional(
+            "humidity_sensor",
+            default=defaults.get("humidity_sensor", ""),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(
+            "window_sensor",
+            default=defaults.get("window_sensor", ""),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="binary_sensor")
+        ),
+        vol.Optional(
+            "occupancy_sensor",
+            default=defaults.get("occupancy_sensor", ""),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="binary_sensor")
+        ),
+        vol.Optional(
+            "fans",
+            default=defaults.get("fans", []),
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="fan", multiple=True)
+        ),
+        vol.Optional(
+            "comfort_upper",
+            default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "passive_threshold",
+            default=defaults.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "escalate_threshold",
+            default=defaults.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=85, step=1, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "passive_fan_speed",
+            default=defaults.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(
+            "escalate_fan_speed",
+            default=defaults.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
+        vol.Optional(
+            "emergency_fan_speed",
+            default=defaults.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+        ),
+    }
+
+
 class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Adaptive HVAC."""
 
@@ -42,23 +132,14 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 title="Adaptive HVAC System",
                 data={
                     "entry_type": ENTRY_TYPE_SYSTEM,
-                    "thermostat_entity": user_input.get("thermostat"),
-                    "weather_entity": user_input.get("weather"),
+                    "thermostat_entity": user_input.get("thermostat_entity"),
+                    "weather_entity": user_input.get("weather_entity"),
                 },
             )
 
-        schema = vol.Schema({
-            vol.Required("thermostat"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="climate")
-            ),
-            vol.Required("weather"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="weather")
-            ),
-        })
-
         return self.async_show_form(
             step_id="system",
-            data_schema=schema,
+            data_schema=vol.Schema(_system_schema_dict({})),
         )
 
     async def async_step_zone(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
@@ -73,16 +154,16 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         "entry_type": ENTRY_TYPE_ZONE,
                         "zone_name": zone_name,
+                        **user_input,
                     },
                 )
 
-        schema = vol.Schema({
-            vol.Required("zone_name"): str,
-        })
-
         return self.async_show_form(
             step_id="zone",
-            data_schema=schema,
+            data_schema=vol.Schema({
+                vol.Required("zone_name", default=user_input.get("zone_name", "") if user_input else ""): str,
+                **_zone_schema_dict(user_input or {}),
+            }),
         )
 
     @staticmethod
@@ -107,20 +188,7 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
         defaults = {**self._entry.data, **self._entry.options}
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Required(
-                    "thermostat_entity",
-                    default=defaults.get("thermostat_entity"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="climate")
-                ),
-                vol.Required(
-                    "weather_entity",
-                    default=defaults.get("weather_entity"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="weather")
-                ),
-            }),
+            data_schema=vol.Schema(_system_schema_dict(defaults)),
         )
 
 
@@ -138,62 +206,5 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
         defaults = {**self._entry.data, **self._entry.options}
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    "temp_sensors",
-                    default=defaults.get("temp_sensors", ""),
-                ): str,
-                vol.Optional(
-                    "humidity_sensor",
-                    default=defaults.get("humidity_sensor", ""),
-                ): str,
-                vol.Optional(
-                    "window_sensor",
-                    default=defaults.get("window_sensor", ""),
-                ): str,
-                vol.Optional(
-                    "occupancy_sensor",
-                    default=defaults.get("occupancy_sensor", ""),
-                ): str,
-                vol.Optional(
-                    "fans",
-                    default=defaults.get("fans", ""),
-                ): str,
-                vol.Optional(
-                    "comfort_upper",
-                    default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "passive_threshold",
-                    default=defaults.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "escalate_threshold",
-                    default=defaults.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "passive_fan_speed",
-                    default=defaults.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
-                ),
-                vol.Optional(
-                    "escalate_fan_speed",
-                    default=defaults.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
-                ),
-                vol.Optional(
-                    "emergency_fan_speed",
-                    default=defaults.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
-                ),
-            }),
+            data_schema=vol.Schema(_zone_schema_dict(defaults)),
         )
