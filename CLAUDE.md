@@ -260,13 +260,21 @@ Thermostat `fan_mode`: `on` = continuous circulation, `auto` = only when HVAC cy
 
 ## Adaptive HVAC Integration
 
-The new **`adaptive_hvac` custom HACS integration** (v0.2.0+) replaces the old automation-based HVAC system with a pure decision engine (no HA imports). Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
+The **`adaptive_hvac` custom HACS integration** (v0.2.10+) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
+
+### Why This Exists
+The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML automations with hardcoded entity IDs, making it inflexible and hard to reuse. This integration:
+- **Removes hardcoded entity IDs** — fully configurable via UI
+- **Enables per-room thermal autonomy** — any room can demand fans; occupancy determines AC gating
+- **Adds system-wide window logic** — any window open blocks AC/heat, enables passive ventilation
+- **Respects user fan claims** — integrates with existing fan lock system
+- **Is reusable** — zero HA-specific code in decision logic; works on any Python system
 
 ### Architecture
-- **ZoneCoordinator**: Evaluates each room's temperature independently, issues fan commands per zone config
-- **SystemCoordinator**: Aggregates zone decisions, applies primary zone gating, controls thermostat & whole-house fan
-- **Logic Engine**: Pure decision trees (easy to test, reason about, extend)
-- **Three-Layer Fan Control**: zone auto-control switch → per-fan lock → per-step nullable speeds
+- **ZoneCoordinator**: Evaluates each room independently (temp averaging, humidity, window state, occupancy)
+- **SystemCoordinator**: Discovers + aggregates zone decisions, applies dynamic primary zone selection, controls thermostat & whole-house fan
+- **Logic Engine**: Pure decision trees (no HA imports) — used by both integration and unit tests
+- **Three-Layer Fan Control**: zone auto-control switch → per-fan user claim lock → per-mode speed control
 
 ### Config entries
 - **System** entry (`entry_type: system`) — thermostat, weather, solar, AC settings, heating thresholds, setback temps, windows sensor, passive cooling toggle
@@ -314,11 +322,29 @@ The new **`adaptive_hvac` custom HACS integration** (v0.2.0+) replaces the old a
 4. **Escalate** (≥ 74°F for 30min OR trend > 1.5°F/h) — fans 50%, AC at 68°F
 5. **Emergency** (≥ 78°F) — fans 100%, AC at 68°F
 
-### Primary zone gating
-- Only **primary zone's** thermal request gates AC activation
-- Secondary zones generate fan commands + status but don't trigger thermostat
-- System falls back to highest-urgency zone if no primary configured
-- Enables one zone (e.g., Caleb's office) to gate AC while others operate independently
+### Zone Discovery & Registration (v0.2.10+)
+- **Auto-discovery**: At startup, system coordinator discovers all zone coordinators from `hass.data[DOMAIN]`
+- **Dynamic zone list**: No need to explicitly register zones — any zone config entry is automatically included
+- **Aggregate zone states**: Collects temp, humidity, window, occupancy from each zone for system-level decisions
+
+### Dynamic Primary Zone Gating (v0.2.10+)
+Primary zone selection is **dynamic**, not static, based on **occupancy + sleep mode**:
+
+1. **Compute active zones**:
+   - Any zone with `zone_occupied=True` is "active"
+   - Master bedroom is always active during `sleep_posture=ON` (so sleeper can demand cooling if master is hot)
+   - If no occupied zones and not sleeping → all zones contribute equally (system responsive to any demand)
+
+2. **Select primary among active zones**:
+   - If configured primary zone is active → use it (explicit config wins)
+   - Otherwise → pick highest-urgency active zone (prevents thermal runaway)
+   - Fallback → no active zones = system OFF
+
+3. **Apply gating**: Only primary zone's cool request gates thermostat AC setpoint
+   - Secondary/non-primary zones still generate fan commands (fans can run without AC)
+   - Enables "Tia's office manual only" + "Caleb's office drives AC" pattern without hardcoding
+
+**Example**: At 2pm, Caleb's office occupied 75°F + Tia's office unoccupied 68°F → Caleb is primary → AC activates. At 11pm, both empty, master bedroom 78°F + sleep mode ON → master is primary → AC activates.
 
 ### Auto-control switch pattern
 Per-zone: `switch.adaptive_hvac_{zone_slug}_auto`
@@ -327,14 +353,21 @@ Per-zone: `switch.adaptive_hvac_{zone_slug}_auto`
 - Persists across HA restarts (RestoreEntity)
 - Can be toggled from dashboard or automations
 
-### Windows behavior (summer only)
-- **System windows open** (`binary_sensor.windows_assumed_open` = ON):
-  - Thermostat forced OFF
-  - Whole-house fan forced ON
-  - All zone fans use `window_fan_speed` (passive circulation only)
-- **Per-zone windows open** (zone window sensor = ON):
-  - Zone fans use `window_fan_speed` independent of system windows
-  - Thermostat stays on unless system windows also open
+### System-Wide Window Override (v0.2.10+)
+**If ANY window is open, AC/heat is blocked** — checked at dispatch time, overrides decision logic.
+
+- **System windows sensor**: `binary_sensor.windows_assumed_open` (aggregates system-wide open windows)
+- **Per-zone windows**: Each zone can have its own contact sensor (window monitor)
+- **Aggregation**: Coordinator checks ALL windows (system + all zones)
+- **If any open** → thermostat OFF, whole-house fan ON (passive ventilation only)
+- **If closed** → normal HVAC logic resumes
+
+**Use case**: Opened bedroom window at night → system immediately disables heating, enables circulation. Closes window → normal heating resumes.
+
+**Zone-level window behavior**:
+- Per-zone window sensors feed into zone decision logic (passive mode trigger)
+- Zone fans may use `window_fan_speed` for passive circulation
+- System-level override supersedes all per-zone logic
 
 ### Humidity passive cooling
 Triggers passive mode when BOTH:
@@ -359,12 +392,13 @@ Zone respects legacy fan lock system:
 6. Monitor `sensor.adaptive_hvac_*` in Developer Tools → States
 7. Use `/api/services/adaptive_hvac/force_evaluate` to trigger immediate cycle
 
-### Known limitations & TODOs
-- Equalization mode not yet implemented (in logic.py)
-- Pre-cool / pre-heat modes use basic forecast triggers (no solar gates yet)
-- Fan pool configuration UI not yet built (fan_config stored as nested JSON)
-- Dashboard cards for zone fan pools and mode visualization pending
-- Per-fan speed overrides (nullable speeds) require config entry rebuild on change
+### Known Gaps & Future Work
+- **Equalization mode**: Not yet implemented in logic.py (floor-to-floor delta balancing)
+- **Pre-cool / pre-heat**: Use basic forecast thresholds, no solar irradiance gating yet
+- **Fan pool UI**: Fan configuration stored as nested JSON in zone options; full UI pending
+- **Dashboard**: Visualizations for zone modes, fan commands, active zone selection pending
+- **Multi-thermostat**: Architecture supports it (config can store multiple), but only single thermostat tested
+- **Per-fan nullable speeds**: Require config entry rebuild on change (HA limitation)
 
 ### Dev notes
 - Logic layer is pure Python (no HA imports) — easy to unit test

@@ -45,7 +45,7 @@ class ZoneState:
 @dataclass
 class SystemState:
     """Current system state across all zones."""
-    zone_states: list[ZoneState]
+    zone_states: list[ZoneState]          # all zone states; zone_occupied drives active zone calc
     outdoor_temp: float                   # °F
     forecast_high: float                  # today's forecast high (°F)
     forecast_low: float                   # tonight's forecast low (°F)
@@ -79,7 +79,7 @@ class ZoneDecision:
 @dataclass
 class SystemDecision:
     """System-level decision output."""
-    thermostat_hvac_mode: str           # "heat" | "cool" | "off"
+    thermostat_hvac_mode: str = "off"   # "heat" | "cool" | "off"
     thermostat_setpoint: Optional[float] = None
     whole_house_fan_mode: str = "auto"
     season: str = "shoulder"
@@ -528,14 +528,41 @@ def decide_system(
             reasoning=reasoning,
         )
 
-    # Find primary zone decision (only primary zone gates AC decisions)
-    primary_zones = [d for d in zone_decisions if d.is_primary_zone]
-    primary_decision = primary_zones[0] if primary_zones else None
+    # Compute active zones (occupancy + sleep mode)
+    active_zones = []
+    for zone_state in sys_state.zone_states:
+        if zone_state.zone_occupied:
+            active_zones.append(zone_state)
+        # Master bedroom always active during sleep
+        elif sys_state.sleep_posture and "master" in zone_state.zone_name.lower():
+            active_zones.append(zone_state)
 
-    if primary_decision:
-        reasoning.append(f"Primary zone: {primary_decision.zone_name}")
+    # Fallback: if no occupied zones, all zones are "active" (system should respond to any zone)
+    if not active_zones:
+        active_zones = sys_state.zone_states
+
+    # Find primary zone decision — dynamic selection among active zones
+    # Prefer configured primary zones, otherwise use highest-urgency active zone
+    primary_zones_dyn = [
+        d for d in zone_decisions
+        if d.is_primary_zone and any(z.zone_name == d.zone_name for z in active_zones)
+    ]
+
+    if primary_zones_dyn:
+        primary_decision = primary_zones_dyn[0]
+        reasoning.append(f"Primary zone (configured + active): {primary_decision.zone_name}")
     else:
-        reasoning.append("No primary zone configured (using highest-urgency zone)")
+        # No configured primary in active zones, pick highest urgency among active
+        active_zone_names = {z.zone_name for z in active_zones}
+        active_zone_temps = {z.zone_name: z.temp for z in active_zones}
+        active_decisions = [d for d in zone_decisions if d.zone_name in active_zone_names]
+        if active_decisions:
+            primary_decision = max(active_decisions, key=lambda d: (d.urgency, active_zone_temps.get(d.zone_name, 0)))
+            zone_temp = active_zone_temps.get(primary_decision.zone_name, 0)
+            reasoning.append(f"Dynamic primary (active + highest urgency): {primary_decision.zone_name} (urgency={primary_decision.urgency}, temp={zone_temp}°F)")
+        else:
+            primary_decision = None
+            reasoning.append("No active zones (all zones idle, system OFF)")
 
     # Aggregate requests by urgency
     max_urgency = max((d.urgency for d in zone_decisions), default=0)

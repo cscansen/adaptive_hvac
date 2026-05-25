@@ -448,8 +448,25 @@ class SystemCoordinator(DataUpdateCoordinator):
             self._season_state,
         )
 
-        # Build system state
-        zone_states = [d.mode for d in zone_decisions]  # Placeholder
+        # Build zone states for system decision (with occupancy for active zone calc)
+        zone_states = []
+        for coord, decision in zip(self.zone_coordinators, zone_decisions):
+            zone_state = ZoneState(
+                zone_name=coord.zone_name,
+                floor=coord.zone_config.get("floor", ""),
+                temp=coord._read_temp(),
+                temp_trend=coord._calculate_trend(),
+                humidity=coord._read_humidity(),
+                fans_claimed=coord._read_fan_claims(),
+                window_open=coord._read_window_open(),
+                zone_occupied=coord._read_occupancy(),
+                current_mode=decision.mode,
+                is_primary_zone=decision.is_primary_zone,
+                windows_assumed_open=windows_assumed_open,
+                mode_age_min=0,
+            )
+            zone_states.append(zone_state)
+
         sys_state = SystemState(
             zone_states=zone_states,
             outdoor_temp=outdoor_temp,
@@ -504,10 +521,41 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         return decision
 
+    def _check_any_window_open(self) -> bool:
+        """Check if any window is open (system-wide + per-zone)."""
+        # Check system windows sensor
+        windows_entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
+        state = self.hass.states.get(windows_entity)
+        if state and state.state == "on":
+            return True
+
+        # Check per-zone window sensors
+        for coord in self.zone_coordinators:
+            if coord._read_window_open():
+                return True
+
+        return False
+
     async def _dispatch_thermostat(self, decision: SystemDecision):
         """Send thermostat commands."""
         thermostat = self.system_config.get("thermostat_entity")
         if not thermostat:
+            return
+
+        # Override: if ANY window open, no AC/heat
+        any_window_open = self._check_any_window_open()
+        if any_window_open:
+            _LOGGER.debug("Window(s) open — blocking AC/heat, enabling whole-house fan for passive ventilation")
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {"entity_id": thermostat, "hvac_mode": "off"},
+            )
+            await self.hass.services.async_call(
+                "climate",
+                "set_fan_mode",
+                {"entity_id": thermostat, "fan_mode": "on"},
+            )
             return
 
         if decision.thermostat_hvac_mode == "off":

@@ -27,30 +27,46 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry_type = entry.data.get("entry_type")
 
-    if entry_type == ENTRY_TYPE_SYSTEM:
-        # Set up system entry
-        coordinator = SystemCoordinator(hass, entry.data, [])
-        await coordinator.async_config_entry_first_refresh()
-        hass.data[DOMAIN][entry.entry_id] = coordinator
+    try:
+        if entry_type == ENTRY_TYPE_SYSTEM:
+            # Set up system entry
+            coordinator = SystemCoordinator(hass, entry.data, [])
+            hass.data[DOMAIN][entry.entry_id] = coordinator
 
-        # Forward to platforms
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+            # Discover and register zone coordinators
+            zone_coordinators = [
+                hass.data[DOMAIN][zone_entry.entry_id]
+                for zone_entry in hass.config_entries.async_entries(DOMAIN)
+                if zone_entry.data.get("entry_type") == ENTRY_TYPE_ZONE
+                and zone_entry.entry_id in hass.data[DOMAIN]
+            ]
+            coordinator.zone_coordinators = zone_coordinators
+            _LOGGER.info(f"Registered {len(zone_coordinators)} zone coordinator(s) with system")
 
-        # Register services
-        _register_services(hass, coordinator)
+            await coordinator.async_config_entry_first_refresh()
 
-    elif entry_type == ENTRY_TYPE_ZONE:
-        # Set up zone entry
-        zone_name = entry.data.get("zone_name", "Zone")
-        coordinator = ZoneCoordinator(hass, zone_name, entry.data)
-        await coordinator.async_config_entry_first_refresh()
-        hass.data[DOMAIN][entry.entry_id] = coordinator
+            # Forward to platforms
+            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
 
-        # Forward to platforms
-        await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+            # Register services
+            _register_services(hass, coordinator)
 
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-    return True
+        elif entry_type == ENTRY_TYPE_ZONE:
+            # Set up zone entry
+            zone_name = entry.data.get("zone_name", "Zone")
+            zone_config = {**entry.data, **entry.options}
+            coordinator = ZoneCoordinator(hass, zone_name, zone_config)
+            await coordinator.async_config_entry_first_refresh()
+            hass.data[DOMAIN][entry.entry_id] = coordinator
+
+            # Forward to platforms
+            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+
+        entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+        return True
+    except Exception as e:
+        _LOGGER.error(f"Error setting up Adaptive HVAC entry {entry.entry_id}: {e}", exc_info=True)
+        raise
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

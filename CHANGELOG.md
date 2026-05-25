@@ -4,6 +4,43 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.11] - 2026-05-25
+
+### Added
+- **System-wide window override**: If ANY window (system + any zone) is open, AC/heat is blocked; whole-house fan activates for passive ventilation. Enforcement happens at dispatch time, overriding all decision logic.
+
+### Changed
+- Coordinator passes per-zone window states to `decide_system` via aggregated `zone_states` for system-level override logic
+
+## [0.2.10] - 2026-05-25
+
+### Added
+- **Zone-to-system auto-discovery**: System coordinator automatically discovers and registers all zone coordinators at startup (no manual linking needed)
+- **Dynamic primary zone selection**: Primary zone is now selected at runtime based on occupancy + sleep mode, not as a static config:
+  - Occupied zones are "active"; master bedroom is always active during sleep mode
+  - Among active zones, picks highest-urgency (or configured primary if active)
+  - System OFF if no active zones
+  - Enables "Caleb's office gates AC when occupied; downstairs takes over when empty" patterns without hardcoding
+- **Zone-level entity selectors**: Config flow now offers entity selectors (multi-select for temps/fans, single for humidity/window/occupancy)
+  - Per-zone window sensors feed into system-wide window override
+  - No more empty zone configs — all settings available via UI
+- **Occupancy tracking in system state**: Collects zone occupancy booleans for active zone computation
+
+### Changed
+- `SystemCoordinator._async_update_data` now builds proper `ZoneState` objects with occupancy info for each zone (previously placeholder)
+- `decide_system` now takes occupancy info via `sys_state.zone_states[*].zone_occupied`
+- Config flow moved from placeholder text fields to proper entity selectors
+- Improved logging: system decision now includes reason for primary zone selection
+
+### Fixed
+- Fixed 500 errors in options flow by using entity selectors instead of text inputs
+- Fixed system coordinator trying to iterate empty `zone_coordinators` list at startup
+
+## [0.2.9] - 2026-05-24
+
+### Fixed
+- Fixed dataclass field ordering error: `SystemDecision.thermostat_hvac_mode` now has default value `"off"` (was missing default before required fields)
+
 ## [0.2.8] - 2026-05-22
 
 ### Fixed
