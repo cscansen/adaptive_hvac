@@ -307,7 +307,82 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_system_thresholds(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Step 3: Temperature thresholds."""
+        """Step 3a: AC & Heat Setpoints — What temperatures to cool/heat to."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_heating()
+
+        return self.async_show_form(
+            step_id="system_thresholds",
+            data_schema=vol.Schema({
+                vol.Optional("ac_setpoint", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_setpoint", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_heating(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3b: Heating Triggers — When to activate heat."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_passive()
+
+        return self.async_show_form(
+            step_id="system_heating",
+            data_schema=vol.Schema({
+                vol.Optional("heat_threshold", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=72, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("emergency_heat_threshold", default=55.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=60, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_passive(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3c: Whole-House Fan & Equalization — Fan activation and zone balancing."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_setback()
+
+        return self.async_show_form(
+            step_id="system_passive",
+            data_schema=vol.Schema({
+                vol.Optional("passive_fan_threshold", default=70.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_downstairs_temp", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_upstairs_temp", default=74.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_setback(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3d: Away Mode Setback — Temps when house is unoccupied 8+ hours."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_other()
+
+        return self.async_show_form(
+            step_id="system_setback",
+            data_schema=vol.Schema({
+                vol.Optional("setback_cool_temp", default=76.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("setback_heat_temp", default=62.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=68, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_other(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3e: Other — Solar and fan circulation settings."""
         if user_input is not None:
             self.system_data.update(user_input)
             return self.async_create_entry(
@@ -319,78 +394,15 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         return self.async_show_form(
-            step_id="system_thresholds",
+            step_id="system_other",
             data_schema=vol.Schema({
-                vol.Optional(
-                    "ac_setpoint",
-                    default=68.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "heat_setpoint",
-                    default=68.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "heat_threshold",
-                    default=68.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=55, max=72, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "emergency_heat_threshold",
-                    default=55.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=40, max=60, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "setback_cool_temp",
-                    default=76.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "setback_heat_temp",
-                    default=62.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=55, max=68, step=1, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "passive_fan_threshold",
-                    default=70.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "escalate_enabled_downstairs_temp",
-                    default=68.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "escalate_enabled_upstairs_temp",
-                    default=74.0,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
-                ),
-                vol.Optional(
-                    "ac_trigger_solar_watts",
-                    default=2000.0,
-                ): selector.NumberSelector(
+                vol.Optional("ac_trigger_solar_watts", default=2000.0): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=500, max=10000, step=100, unit_of_measurement="W")
                 ),
-                vol.Optional(
-                    "window_fan_speed",
-                    default=25.0,
-                ): selector.NumberSelector(
+                vol.Optional("window_fan_speed", default=25.0): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
                 ),
             }),
-            description_placeholders={
-                "info": "**Discrete Fan Speeds:** All fan speeds (system and zone level) are percentages (0-100%). Your fans with discrete speeds (33/66/99%) are automatically mapped by Home Assistant. For example: 25% → 33%, 50% → 66%, 75% → 99%."
-            },
         )
 
     async def async_step_zone(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
