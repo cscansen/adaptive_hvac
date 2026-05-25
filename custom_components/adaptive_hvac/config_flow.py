@@ -227,6 +227,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Adaptive HVAC."""
 
     VERSION = 1
+    system_data: Dict[str, Any] = {}
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         """Handle user step — choose system or zone."""
@@ -244,20 +245,164 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_system(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Step for system-level configuration."""
+        """Step 1: Thermostat & Weather (required)."""
         if user_input is not None:
+            self.system_data = user_input
+            return await self.async_step_system_entities()
+
+        return self.async_show_form(
+            step_id="system",
+            data_schema=vol.Schema({
+                vol.Required(
+                    "thermostat_entity",
+                    default="",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="climate")
+                ),
+                vol.Required(
+                    "weather_entity",
+                    default="",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="weather")
+                ),
+            }),
+            description_placeholders={"step_title": "Step 1/3: Thermostat & Weather"},
+        )
+
+    async def async_step_system_entities(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 2: House-level sensors (optional but recommended)."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_thresholds()
+
+        return self.async_show_form(
+            step_id="system_entities",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "windows_assumed_open_sensor",
+                    default="binary_sensor.windows_assumed_open",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="binary_sensor")
+                ),
+                vol.Optional(
+                    "sleep_posture_entity",
+                    default="",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="input_boolean")
+                ),
+                vol.Optional(
+                    "occupancy_entities",
+                    default=[],
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
+                ),
+                vol.Optional(
+                    "solar_entity",
+                    default="",
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+            }),
+            description_placeholders={"step_title": "Step 2/3: House-Level Sensors (Optional)"},
+        )
+
+    async def async_step_system_thresholds(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3a: AC & Heat Setpoints — What temperatures to cool/heat to."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_heating()
+
+        return self.async_show_form(
+            step_id="system_thresholds",
+            data_schema=vol.Schema({
+                vol.Optional("ac_setpoint", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_setpoint", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_heating(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3b: Heating Triggers — When to activate heat."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_passive()
+
+        return self.async_show_form(
+            step_id="system_heating",
+            data_schema=vol.Schema({
+                vol.Optional("heat_threshold", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=72, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("emergency_heat_threshold", default=55.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=60, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_passive(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3c: Whole-House Fan & Equalization — Fan activation and zone balancing."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_setback()
+
+        return self.async_show_form(
+            step_id="system_passive",
+            data_schema=vol.Schema({
+                vol.Optional("passive_fan_threshold", default=70.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_downstairs_temp", default=68.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_upstairs_temp", default=74.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_setback(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3d: Away Mode Setback — Temps when house is unoccupied 8+ hours."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_other()
+
+        return self.async_show_form(
+            step_id="system_setback",
+            data_schema=vol.Schema({
+                vol.Optional("setback_cool_temp", default=76.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("setback_heat_temp", default=62.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=68, step=1, unit_of_measurement="°F")
+                ),
+            }),
+        )
+
+    async def async_step_system_other(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3e: Other — Solar and fan circulation settings."""
+        if user_input is not None:
+            self.system_data.update(user_input)
             return self.async_create_entry(
                 title="Adaptive HVAC System",
                 data={
                     "entry_type": ENTRY_TYPE_SYSTEM,
-                    "thermostat_entity": user_input.get("thermostat_entity"),
-                    "weather_entity": user_input.get("weather_entity"),
+                    **self.system_data,
                 },
             )
 
         return self.async_show_form(
-            step_id="system",
-            data_schema=vol.Schema(_system_schema_dict({})),
+            step_id="system_other",
+            data_schema=vol.Schema({
+                vol.Optional("ac_trigger_solar_watts", default=2000.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=500, max=10000, step=100, unit_of_measurement="W")
+                ),
+                vol.Optional("window_fan_speed", default=25.0): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+                ),
+            }),
         )
 
     async def async_step_zone(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
@@ -276,12 +421,43 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
+        description_text = """
+**Zone Configuration — Per-Room Settings**
+
+**Required**
+- Zone name: identifier for this room (e.g., "Upstairs", "Master Bedroom")
+- Temperature sensors: 1+ sensor per zone, averaged for decision logic
+
+**Optional Sensors**
+- Humidity sensor: if humidity ≥55% AND temp ≥72°F in summer, triggers passive cooling
+- Window sensor: zone-specific window (system windows also checked for AC/heat blocking)
+- Occupancy sensor: marks zone as "relevant" for equalization logic (closed rooms don't gate AC)
+- Fans: which fans this zone controls (leave blank if zone has no fans)
+
+**Temperature Thresholds** (°F) — When to change modes
+- Comfort upper: below this, fans off (default 70°F)
+- Passive threshold: above this, fans on at passive speed (default 72°F)
+- Escalate threshold: above this for 30min, AC activates (default 74°F)
+
+**Fan Speeds** (%) — Speed in each mode
+- Comfort: fans off (0%) or leave off entirely
+- Passive: fan speed when in passive mode (default 33%)
+- Escalate: fan speed when AC is escalating (default 50%)
+- Emergency: fan speed above 78°F (default 100%)
+
+**Auto-Control Toggle**
+- Accessible after zone is created: switch.adaptive_hvac_{zone_name}_auto
+- ON = auto control (system commands fans), OFF = user-only (you control fans)
+"""
         return self.async_show_form(
             step_id="zone",
             data_schema=vol.Schema({
                 vol.Required("zone_name", default=user_input.get("zone_name", "") if user_input else ""): str,
                 **_zone_schema_dict(user_input or {}),
             }),
+            description_placeholders={
+                "info": description_text
+            },
         )
 
     @staticmethod
