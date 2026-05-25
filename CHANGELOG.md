@@ -4,6 +4,15 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.15] - 2026-05-25
+
+### Added
+- **System-level entity configuration**: Windows sensor, sleep posture entity, occupancy sensors, solar entity all now configurable in UI (were hardcoded/invisible before)
+- **System-level threshold sliders**: AC setpoint, heat setpoint, heat trigger, emergency heat threshold, away-mode cool/heat setpoints, solar watts trigger, window fan speed — all now user-configurable
+
+### Changed
+- Integration is now fully portable — no more hardcoded entity IDs like `binary_sensor.windows_assumed_open`. All system sensors configurable via UI.
+
 ## [0.2.14] - 2026-05-25
 
 ### Added
