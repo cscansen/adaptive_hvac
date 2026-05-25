@@ -83,12 +83,96 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Return options flow."""
-        return OptionsFlow(config_entry)
+        if config_entry.data.get("entry_type") == ENTRY_TYPE_SYSTEM:
+            return SystemOptionsFlow(config_entry)
+        return ZoneOptionsFlow(config_entry)
 
 
-class OptionsFlow(config_entries.OptionsFlow):
-    """Options flow for Adaptive HVAC."""
+class SystemOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for system configuration."""
+
+    def __init__(self, entry: config_entries.ConfigEntry) -> None:
+        self._entry = entry
 
     async def async_step_init(self, user_input=None):
-        """Init step — options not supported, configure at creation."""
-        return self.async_abort(reason="options_not_supported")
+        """Handle options for system entry."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        defaults = {**self._entry.data, **self._entry.options}
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "thermostat_entity",
+                    default=defaults.get("thermostat_entity", "climate.downstairs_thermostat"),
+                ): str,
+                vol.Optional(
+                    "weather_entity",
+                    default=defaults.get("weather_entity", "weather.forecast_home"),
+                ): str,
+            }),
+        )
+
+
+class ZoneOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for zone configuration."""
+
+    def __init__(self, entry: config_entries.ConfigEntry) -> None:
+        self._entry = entry
+
+    async def async_step_init(self, user_input=None):
+        """Handle options for zone entry."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        defaults = {**self._entry.data, **self._entry.options}
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "temp_sensors",
+                    default=defaults.get("temp_sensors", ""),
+                ): str,
+                vol.Optional(
+                    "humidity_sensor",
+                    default=defaults.get("humidity_sensor", ""),
+                ): str,
+                vol.Optional(
+                    "window_sensor",
+                    default=defaults.get("window_sensor", ""),
+                ): str,
+                vol.Optional(
+                    "occupancy_sensor",
+                    default=defaults.get("occupancy_sensor", ""),
+                ): str,
+                vol.Optional(
+                    "fans",
+                    default=defaults.get("fans", ""),
+                ): str,
+                vol.Optional(
+                    "comfort_upper",
+                    default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
+                ): vol.All(vol.Coerce(float), vol.Range(min=60, max=85)),
+                vol.Optional(
+                    "passive_threshold",
+                    default=defaults.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
+                ): vol.All(vol.Coerce(float), vol.Range(min=60, max=85)),
+                vol.Optional(
+                    "escalate_threshold",
+                    default=defaults.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
+                ): vol.All(vol.Coerce(float), vol.Range(min=60, max=85)),
+                vol.Optional(
+                    "passive_fan_speed",
+                    default=defaults.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+                vol.Optional(
+                    "escalate_fan_speed",
+                    default=defaults.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+                vol.Optional(
+                    "emergency_fan_speed",
+                    default=defaults.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            }),
+        )
