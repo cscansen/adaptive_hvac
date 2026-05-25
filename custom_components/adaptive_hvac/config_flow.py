@@ -254,11 +254,39 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
+        description_text = """
+**System Configuration — House-Wide Settings**
+
+**Thermostat & Weather** (Required)
+- Select your climate device and weather integration
+
+**Entity Selectors** (Optional but recommended)
+- Windows sensor: any window open blocks AC/heat
+- Sleep posture: master bedroom sleep mode blocks heating
+- Occupancy sensors: house occupancy for setback logic (away mode)
+- Solar entity: for solar-triggered AC escalation
+
+**Temperature Setpoints** (°F)
+- AC setpoint: what temp to cool to (default 68°F)
+- Heat setpoint: what temp to heat to (default 68°F)
+- Heat trigger: activate heat below this (default 68°F)
+- Emergency heat: activate heat below this regardless of season (default 55°F)
+
+**Away Mode Setback** (when house unoccupied 8+ hours)
+- Cool setpoint: (default 76°F)
+- Heat setpoint: (default 62°F)
+
+**Other Thresholds**
+- Passive fan threshold: activate whole-house fan at this temp (default 70°F)
+- Equalization thresholds: AC only runs if hottest zone ≥ upstairs temp AND coldest zone ≥ downstairs temp
+- Solar watts: solar production above this triggers AC escalation (adjust for your array size)
+- Window fan speed: fan speed when windows open (default 25%)
+"""
         return self.async_show_form(
             step_id="system",
             data_schema=vol.Schema(_system_schema_dict({})),
             description_placeholders={
-                "info": "System-level config: thermostat, weather, house-wide sensors (windows, sleep mode, occupancy), and global thresholds that apply to all zones. Per-room settings (temp sensors, humidity, fans, room-specific thresholds) go in zone config. System decides when AC/heat runs; zones decide fan speeds per mode."
+                "info": description_text
             },
         )
 
@@ -278,6 +306,34 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
+        description_text = """
+**Zone Configuration — Per-Room Settings**
+
+**Required**
+- Zone name: identifier for this room (e.g., "Upstairs", "Master Bedroom")
+- Temperature sensors: 1+ sensor per zone, averaged for decision logic
+
+**Optional Sensors**
+- Humidity sensor: if humidity ≥55% AND temp ≥72°F in summer, triggers passive cooling
+- Window sensor: zone-specific window (system windows also checked for AC/heat blocking)
+- Occupancy sensor: marks zone as "relevant" for equalization logic (closed rooms don't gate AC)
+- Fans: which fans this zone controls (leave blank if zone has no fans)
+
+**Temperature Thresholds** (°F) — When to change modes
+- Comfort upper: below this, fans off (default 70°F)
+- Passive threshold: above this, fans on at passive speed (default 72°F)
+- Escalate threshold: above this for 30min, AC activates (default 74°F)
+
+**Fan Speeds** (%) — Speed in each mode
+- Comfort: fans off (0%) or leave off entirely
+- Passive: fan speed when in passive mode (default 33%)
+- Escalate: fan speed when AC is escalating (default 50%)
+- Emergency: fan speed above 78°F (default 100%)
+
+**Auto-Control Toggle**
+- Accessible after zone is created: switch.adaptive_hvac_{zone_name}_auto
+- ON = auto control (system commands fans), OFF = user-only (you control fans)
+"""
         return self.async_show_form(
             step_id="zone",
             data_schema=vol.Schema({
@@ -285,7 +341,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 **_zone_schema_dict(user_input or {}),
             }),
             description_placeholders={
-                "info": "Zone-level config: per-room settings. Temperature sensors (required) + optional humidity/window/occupancy sensors. Fan speed thresholds control when/how fast room fans run in each mode (comfort/passive/escalate/emergency). System coordinator aggregates all zone decisions to control the thermostat."
+                "info": description_text
             },
         )
 
