@@ -32,6 +32,27 @@ def _system_schema_dict(defaults: dict) -> dict:
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="weather")
         ),
+        vol.Optional(
+            "passive_fan_threshold",
+            default=defaults.get("passive_fan_threshold", 70.0),
+            description="Hottest occupied zone above this temp: activate whole-house fan (first stop-gap before AC)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "escalate_enabled_downstairs_temp",
+            default=defaults.get("escalate_enabled_downstairs_temp", 68.0),
+            description="Coldest occupied zone must be above this temp to allow AC (prevents cooling empty zones)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+        ),
+        vol.Optional(
+            "escalate_enabled_upstairs_temp",
+            default=defaults.get("escalate_enabled_upstairs_temp", 74.0),
+            description="Hottest occupied zone must be above this temp to allow AC (equalization: don't run AC for zone imbalance alone)",
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+        ),
     }
 
 
