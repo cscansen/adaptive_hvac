@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.12] - 2026-05-25
+
+### Fixed
+- Fixed 500 error when clicking gear icon on zone entries by removing problematic custom `__init__` override in OptionsFlow class. OptionsFlow now properly inherits parent initialization, allowing HA config flow lifecycle to work correctly.
+
 ## [0.2.11] - 2026-05-25
 
 ### Added
