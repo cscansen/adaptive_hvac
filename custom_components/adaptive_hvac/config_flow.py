@@ -452,6 +452,12 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         defaults = {**self._entry.data, **self._entry.options}
+
+        # Normalize old string values to lists for multi-select fields
+        for field in ["occupancy_entities"]:
+            if field in defaults and isinstance(defaults[field], str):
+                defaults[field] = [defaults[field]] if defaults[field] else []
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(_system_schema_dict(defaults)),
@@ -504,6 +510,12 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         defaults = {**self._entry.data, **self._entry.options}
+
+        # Normalize old string values to lists for multi-select fields
+        for field in ["humidity_sensor", "window_sensor", "occupancy_sensor"]:
+            if field in defaults and isinstance(defaults[field], str):
+                defaults[field] = [defaults[field]] if defaults[field] else []
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(_zone_schema_dict(defaults)),
