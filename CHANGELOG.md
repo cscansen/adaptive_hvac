@@ -7,10 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.2.16] - 2026-05-25
 
 ### Added
-- **Comprehensive UI descriptions**: Options form now shows detailed explanations for each field section (Required Entities, House Sensors, Setpoints, Thresholds, etc.)
+- **All system config fields exposed in UI**: Windows sensor, sleep posture, occupancy, solar entity, AC/heat setpoints, heating thresholds, setback temps, solar trigger, window fan speed all now configurable (previously hardcoded)
 
 ### Fixed
-- Clarified cryptic field names with human-readable descriptions in system configuration
+- Config flow now loads without 500 errors (removed unsupported description parameters)
+- Integration fully portable — no more hardcoded entity IDs
 
 ## [0.2.15] - 2026-05-25
 
