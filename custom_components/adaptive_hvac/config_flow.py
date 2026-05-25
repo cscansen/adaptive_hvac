@@ -173,37 +173,37 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
                     "comfort_upper",
                     default=defaults.get("comfort_upper", DEFAULT_COMFORT_UPPER),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
                 ),
                 vol.Optional(
                     "passive_threshold",
                     default=defaults.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
                 ),
                 vol.Optional(
                     "escalate_threshold",
                     default=defaults.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                    selector.NumberSelectorConfig(min=60, max=85, unit_of_measurement="°F")
                 ),
                 vol.Optional(
                     "passive_fan_speed",
                     default=defaults.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")
+                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
                 ),
                 vol.Optional(
                     "escalate_fan_speed",
                     default=defaults.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")
+                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
                 ),
                 vol.Optional(
                     "emergency_fan_speed",
                     default=defaults.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
                 ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")
+                    selector.NumberSelectorConfig(min=0, max=100, unit_of_measurement="%")
                 ),
             }),
         )
