@@ -515,8 +515,8 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
 
         defaults = {**self._entry.data, **self._entry.options}
 
-        # Normalize values to lists for multi-select fields
-        for field in ["humidity_sensor", "window_sensor", "occupancy_sensor"]:
+        # Normalize values to lists for multi-select fields (handles backwards compat: v0.2.15 string → v0.2.17 list)
+        for field in ["temp_sensors", "humidity_sensor", "window_sensor", "occupancy_sensor", "fans"]:
             val = defaults.get(field)
             if val is None or (isinstance(val, str) and not val):
                 defaults[field] = []
