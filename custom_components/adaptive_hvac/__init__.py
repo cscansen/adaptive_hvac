@@ -62,18 +62,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # IMPORTANT: Store coordinator BEFORE async operations to ensure platforms can find it
             hass.data[DOMAIN][entry.entry_id] = coordinator
             _LOGGER.info(f"ZoneCoordinator {zone_name} stored in hass.data[{DOMAIN}][{entry.entry_id}]")
+            with open("/tmp/adaptive_hvac_setup.log", "a") as f:
+                f.write(f"[__init__.py] Stored ZoneCoordinator {zone_name} for {entry.entry_id}\n")
 
             # Now do async initialization
             await coordinator.async_config_entry_first_refresh()
             _LOGGER.debug(f"ZoneCoordinator {zone_name} first refresh complete")
+            with open("/tmp/adaptive_hvac_setup.log", "a") as f:
+                f.write(f"[__init__.py] ZoneCoordinator first refresh complete\n")
 
             # Forward to platforms
             _LOGGER.info(f"Forwarding zone {zone_name} to sensor and switch platforms")
+            with open("/tmp/adaptive_hvac_setup.log", "a") as f:
+                f.write(f"[__init__.py] Forwarding zone {zone_name} to platforms\n")
             try:
                 await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
                 _LOGGER.info(f"Successfully forwarded zone {zone_name} to platforms")
+                with open("/tmp/adaptive_hvac_setup.log", "a") as f:
+                    f.write(f"[__init__.py] Successfully forwarded zone to platforms\n")
             except Exception as e:
                 _LOGGER.error(f"Failed to forward zone {zone_name} to platforms: {e}", exc_info=True)
+                with open("/tmp/adaptive_hvac_setup.log", "a") as f:
+                    f.write(f"[__init__.py] ERROR forwarding: {e}\n")
                 raise
 
         entry.async_on_unload(entry.add_update_listener(async_reload_entry))
