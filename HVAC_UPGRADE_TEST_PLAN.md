@@ -1,6 +1,6 @@
 # Adaptive HVAC Integration Status — 2026-05-26 (Updated)
 
-## Current State: SYSTEM COORDINATOR DISCOVERY FIXED, ZONE CONFIG RELOAD PENDING
+## Current State: ZONE COORDINATOR WORKING, SYSTEM AGGREGATION IN PROGRESS
 
 ### ✅ What's Working
 - **System coordinator fully deployed** on HA (v0.2.17 with regression fixes)
@@ -12,20 +12,24 @@
 - **Dynamic zone discovery FIXED:** System coordinator now discovers zones at each update (not just startup)
 - **Old YAML automations still running** in parallel (hvac_cooling, hvac_heating_normal, etc.)
 
-### 🟡 Current Issue: Zone Coordinator Using Stale Config
+### ✅ Zone Coordinator Working
+- **Zone sensor shows real data:** `sensor.caleb_s_office_hvac_status` = "Caleb's Office: EMERGENCY COOLING 80.4°F"
+- **Temperature reading:** Zone reads 80.4°F from `sensor.caleb_s_office_hygrometer_temperature`
+- **Decision making:** Zone correctly decides EMERGENCY COOLING based on thermal logic
+- **System discovery:** System coordinator finds 1 zone via dynamic discovery on refresh
 
-Zone sensors exist but show `SENSOR_FAILSAFE` because:
-- Zone config on disk was updated to use `sensor.caleb_s_office_hygrometer_temperature` ✓
-- But zone coordinator **in memory** still has the old garage sensor config
-- Root cause: HA cached the old zone entry; reload/restart didn't pick up the new config
-
-**Next step:** Need to hard-restart HA *Docker container* (not just services) to force config reload from disk
+### 🟡 Current Issue: System Not Aggregating Zone Data
+- System status shows "No zone data available" even though zone has valid decision
+- System coordinator finds zone but not processing `coord.last_decision` correctly
+- Likely issue: Zone decision valid but system aggregation logic has edge case
 
 ### What Was Fixed This Session
-1. **Root cause identified:** System coordinator was discovering zones during its own setup (before zones existed). Fixed by deferring discovery to update time.
-2. **Zone sensor entities verified created** with correct unique_id patterns
-3. **Zone config corrected on disk** with proper Caleb's office temperature sensor
-4. **Code deployed:** Dynamic zone discovery in coordinator.py + cleaner __init__.py
+1. **Race condition fixed:** System coordinator first refresh ran before zones stored in hass.data
+   - Added early return to set `last_decision` when no zones found (fixes "Initializing..." stuck status)
+2. **Dynamic zone discovery verified working** - system coordinator finds zones on refresh
+3. **Zone configuration verified correct** on disk with proper temp sensor
+4. **Detailed logging added** to coordinator init and temp reading for diagnostics
+5. **Code deployed with multiple commits**
 
 ---
 
