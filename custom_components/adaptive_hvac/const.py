@@ -81,9 +81,21 @@ DEFAULT_WINDOW_FAN_SPEED = 25
 DEFAULT_PASSIVE_COOLING_ENABLED = True
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 
-# System — Season thresholds
+# System — Season thresholds (forecast-based)
 DEFAULT_SUMMER_THRESHOLD = 75.0
 DEFAULT_WINTER_THRESHOLD = 40.0
+
+# System — Season calendar dates (for calendar-based gating, not forecast)
+DEFAULT_WINTER_START_MONTH = 10  # October
+DEFAULT_WINTER_END_MONTH = 4    # April
+DEFAULT_SUMMER_START_MONTH = 5   # May
+DEFAULT_SUMMER_END_MONTH = 9    # September
+
+# System — AC/Heat gating thresholds (v0.2.19)
+DEFAULT_COOL_EXTERIOR_THRESHOLD = 70.0  # °F, don't AC if below this
+DEFAULT_COOL_INTERIOR_THRESHOLD = 74.0  # °F, don't AC if below this
+DEFAULT_HEAT_EXTERIOR_THRESHOLD = 60.0  # °F, don't heat if above this
+DEFAULT_HEAT_INTERIOR_THRESHOLD = 68.0  # °F, don't heat if above this
 
 # ===== DEFAULTS (ZONE) =====
 
@@ -175,6 +187,18 @@ CONF_PREHEAT_TRIGGER = "preheat_trigger"
 CONF_WINDOWS_ASSUMED_OPEN_SENSOR = "windows_assumed_open_sensor"
 CONF_WINDOW_FAN_SPEED = "window_fan_speed"
 CONF_PASSIVE_COOLING_ENABLED = "passive_cooling_enabled"
+
+# System — Season calendar dates (v0.2.19)
+CONF_WINTER_START_MONTH = "winter_start_month"
+CONF_WINTER_END_MONTH = "winter_end_month"
+CONF_SUMMER_START_MONTH = "summer_start_month"
+CONF_SUMMER_END_MONTH = "summer_end_month"
+
+# System — AC/Heat gating thresholds (v0.2.19)
+CONF_COOL_EXTERIOR_THRESHOLD = "cool_exterior_threshold"
+CONF_COOL_INTERIOR_THRESHOLD = "cool_interior_threshold"
+CONF_HEAT_EXTERIOR_THRESHOLD = "heat_exterior_threshold"
+CONF_HEAT_INTERIOR_THRESHOLD = "heat_interior_threshold"
 
 # System — Fan pool definition
 CONF_WHOLE_HOUSE_FAN_ENTITY = "whole_house_fan_entity"
