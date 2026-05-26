@@ -32,16 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Set up system entry
             coordinator = SystemCoordinator(hass, entry.data, [])
             hass.data[DOMAIN][entry.entry_id] = coordinator
-
-            # Discover and register zone coordinators
-            zone_coordinators = [
-                hass.data[DOMAIN][zone_entry.entry_id]
-                for zone_entry in hass.config_entries.async_entries(DOMAIN)
-                if zone_entry.data.get("entry_type") == ENTRY_TYPE_ZONE
-                and zone_entry.entry_id in hass.data[DOMAIN]
-            ]
-            coordinator.zone_coordinators = zone_coordinators
-            _LOGGER.info(f"Registered {len(zone_coordinators)} zone coordinator(s) with system")
+            _LOGGER.info("System coordinator created; zones will be discovered dynamically")
 
             await coordinator.async_config_entry_first_refresh()
 

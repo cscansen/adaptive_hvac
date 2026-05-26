@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
+    ENTRY_TYPE_ZONE,
     SCAN_INTERVAL_MINUTES,
     DEFAULT_COMFORT_UPPER,
     DEFAULT_PASSIVE_THRESHOLD,
@@ -429,6 +430,16 @@ class SystemCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> SystemDecision:
         """Fetch zone decisions and compute system decision."""
+        # Dynamically discover zone coordinators (in case new zones were added since startup)
+        active_zones = [
+            self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if entry.data.get("entry_type") == ENTRY_TYPE_ZONE
+            and self.hass.data.get(DOMAIN, {}).get(entry.entry_id) is not None
+        ]
+        self.zone_coordinators = [z for z in active_zones if z is not None]
+        _LOGGER.debug(f"System found {len(self.zone_coordinators)} active zone(s)")
+
         # Get all zone decisions (trigger zone coordinators)
         zone_decisions = []
         for coord in self.zone_coordinators:
