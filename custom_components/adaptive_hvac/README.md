@@ -5,7 +5,11 @@ A custom Home Assistant integration for intelligent, adaptive HVAC control based
 ## Features
 
 - **System + Zone Architecture**: Global AC/heating/setback config with per-room cooling control
-- **Primary Zone Gating**: Only primary zone can activate AC; others are advisory
+- **System-Level AC/Heat Gating (v0.2.19)**: AC and heat activation controlled at system level based on:
+  - Calendar season (customizable: Oct-April winter, May-Sept summer)
+  - Exterior weather (won't AC when cool outside, won't heat when warm outside)
+  - Interior aggregate temperature (upstairs average)
+  - **All thresholds configurable via UI** (no code changes needed)
 - **Per-Zone Auto-Control**: Toggle automatic fan control on/off per room (e.g., user-only mode for Tia's office)
 - **Nullable Fan Speeds**: Skip specific cooling steps per fan (null = skip, 0 = off, 1-100 = %)
 - **Passive Cooling**: Whole-house fan + room circulation based on temperature and humidity
@@ -35,26 +39,67 @@ A custom Home Assistant integration for intelligent, adaptive HVAC control based
 
 ### System Entry (Global)
 
-Configure once for the entire system:
+Configure once for the entire system via multi-step UI wizard:
 
+#### Step 1: Thermostat & Weather (Required)
 | Setting | Type | Default | Notes |
 |---------|------|---------|-------|
 | Thermostat | climate entity | `climate.downstairs_thermostat` | Controls mode, setpoint, fan |
 | Weather | weather entity | `weather.forecast_home` | For forecast-based triggers |
-| Solar (optional) | sensor entity | — | Solar irradiance for AC escalation |
-| Sleep Posture (optional) | input_boolean | — | Block heating during sleep |
-| Occupancy Sensors (optional) | binary_sensor(s) | — | For unoccupied setback logic |
-| AC Enabled | boolean | `true` | Master AC on/off |
-| AC Setpoint | number °F | `68` | Thermostat setpoint when AC activates |
-| Heat Threshold | number °F | `68` | Trigger heating when below this |
-| Heat Setpoint | number °F | `68` | Target heating temperature |
-| Emergency Heat | number °F | `55` | Emergency heating (any season) |
-| Setback Cool | number °F | `76` | Cooling setpoint when unoccupied |
-| Setback Heat | number °F | `62` | Heating setpoint when unoccupied |
-| Unoccupied Hours | number | `8` | Hours before setback activates |
-| Windows Sensor | binary_sensor | — | System-wide window open sensor |
-| Window Fan Speed | number % | `25` | Fan speed when windows open |
-| Passive Cooling | boolean | `true` | Enable whole-house fan |
+
+#### Step 2: House-Level Sensors (Optional)
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| Windows Sensor | binary_sensor | `binary_sensor.windows_assumed_open` | System-wide window open detection |
+| Sleep Posture | input_boolean | — | Block heating during sleep |
+| Occupancy Sensors | binary_sensor(s) | — | For unoccupied setback logic |
+| Solar Sensor | sensor | — | Solar irradiance for AC escalation |
+
+#### Step 3a: AC & Heat Setpoints
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| AC Setpoint | number °F | `68` | Target temp when AC activates |
+| Heat Setpoint | number °F | `68` | Target temp when heating activates |
+
+#### Step 3b: Heating Triggers
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| Heat Threshold | number °F | `68` | Zone temp trigger for normal heating |
+| Emergency Heat | number °F | `55` | Emergency heating threshold (any season) |
+
+#### Step 3c: Whole-House Fan & Equalization
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| Passive Fan Threshold | number °F | `70` | Hottest zone temp that triggers whole-house fan |
+| Escalate Downstairs Temp | number °F | `68` | Coldest zone must be above this for AC |
+| Escalate Upstairs Temp | number °F | `74` | Hottest zone must be above this for AC |
+
+#### Step 3d: Away Mode Setback
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| Setback Cool | number °F | `76` | Cooling setpoint when unoccupied 8+ hours |
+| Setback Heat | number °F | `62` | Heating setpoint when unoccupied 8+ hours |
+
+#### Step 3e: System-Level AC/Heat Gating (v0.2.19)
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| Winter Start Month | dropdown | `10` (Oct) | Calendar month when winter season begins |
+| Winter End Month | dropdown | `4` (Apr) | Calendar month when winter season ends |
+| Cool Exterior Threshold | number °F | `70` | Don't AC if outdoor temp below this |
+| Cool Interior Threshold | number °F | `74` | Don't AC if upstairs avg below this |
+| Heat Exterior Threshold | number °F | `60` | Don't heat if outdoor temp above this |
+| Heat Interior Threshold | number °F | `68` | Don't heat if upstairs avg above this |
+
+**Gating Logic** (v0.2.19):
+- **Summer** (May-Sept): AC allowed if exterior ≥ cool_exterior_threshold AND upstairs_avg ≥ cool_interior_threshold
+- **Winter** (Oct-April): Heat allowed if exterior ≤ heat_exterior_threshold AND upstairs_avg ≤ heat_interior_threshold
+- **Shoulder**: System OFF (fans available for zone/manual control)
+
+#### Step 3f: Other Settings
+| Setting | Type | Default | Notes |
+|---------|------|---------|-------|
+| AC Solar Trigger | number W | `2000` | Solar irradiance threshold for AC escalation |
+| Window Fan Speed | number % | `25` | Fan speed when windows open (passive mode) |
 
 ### Zone Entry (Per Room)
 
@@ -122,9 +167,20 @@ state: 'off'
 
 ## Architecture
 
-**ZoneCoordinator**: Reads zone temps/humidity/sensors, evaluates cooling decision tree, issues fan commands.
+**ZoneCoordinator**: Reads zone temps/humidity/sensors, evaluates cooling decision tree, issues fan commands. Zones operate independently and always contribute to system decisions.
 
-**SystemCoordinator**: Aggregates zone decisions, applies primary zone gating, controls thermostat mode/setpoint and whole-house fan.
+**SystemCoordinator**: 
+- Aggregates zone decisions dynamically (discovers zones on each update cycle)
+- Applies **system-level AC/heat gating** (v0.2.19): checks calendar season, exterior weather, interior aggregate temp
+- Controls thermostat mode/setpoint based on gating + zone requests
+- Manages whole-house fan
+
+**System-Level Gating** (v0.2.19):
+- Reads calendar month to determine if in winter (Oct-Apr) or summer (May-Sep) season
+- Reads exterior temperature from weather entity
+- Reads interior aggregate temperature (`sensor.upstairs_average_temperature`)
+- Gates AC/heat activation: only sends thermostat commands if thresholds met
+- Falls back to system OFF (fans only) if conditions don't allow AC/heat
 
 **Logic Engine**: Pure decision functions (`decide_zone()`, `decide_system()`) with no Home Assistant imports — easy to test independently.
 

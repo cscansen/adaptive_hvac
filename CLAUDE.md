@@ -305,6 +305,8 @@ The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML 
 - One **zone** entry per zone (`entry_type: zone`)
 
 ### System Configuration
+
+#### Core Entities & Sensors
 | Config | Entity/Default | Role |
 |--------|---|---|
 | Thermostat | `climate.downstairs_thermostat` | Controls mode/setpoint/fan |
@@ -312,11 +314,46 @@ The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML 
 | Solar | `sensor.solcast_pv_estimate_now` (optional) | Trigger AC escalation on high irradiance |
 | Sleep posture | `input_boolean.master_suite_sleep_posture` | Block heating during sleep |
 | Occupancy sensors | `binary_sensor.house_occupied` (optional) | Track unoccupied duration for setback |
-| **AC Control** | `ac_enabled=true`, `ac_setpoint=68°F` | Summer AC activation thresholds |
-| **Heating** | `heat_threshold=68°F`, `heat_setpoint=68°F`, `emergency=55°F` | Global heating triggers (all zones) |
-| **Setback** | `setback_cool=76°F`, `setback_heat=62°F`, `unoccupied_hours=8` | Away mode thresholds |
-| **Windows** | `windows_assumed_open_sensor` (binary_sensor) | Passive mode trigger (system-wide) |
-| **Passive cooling** | `passive_cooling_enabled=true`, `window_fan_speed=25%` | Whole-house fan control |
+
+#### AC/Heat Control
+| Config | Default | Role |
+|--------|---------|------|
+| `ac_setpoint` | 68°F | AC target temperature |
+| `heat_setpoint` | 68°F | Heat target temperature |
+| `heat_threshold` | 68°F | Zone temp trigger for normal heating |
+| `emergency_heat_threshold` | 55°F | Emergency heat trigger (any zone) |
+
+#### Away Mode Setback
+| Config | Default | Role |
+|--------|---------|------|
+| `setback_cool_temp` | 76°F | Cool setpoint when unoccupied 8+ hours |
+| `setback_heat_temp` | 62°F | Heat setpoint when unoccupied 8+ hours |
+
+#### Windows & Passive Cooling
+| Config | Default | Role |
+|--------|---------|------|
+| `windows_assumed_open_sensor` | `binary_sensor.windows_assumed_open` | Passive mode trigger (any window open) |
+| `window_fan_speed` | 25% | Fan speed for window-open passive mode |
+| `passive_fan_threshold` | 70°F | Hottest zone temp that triggers whole-house fan |
+
+#### System-Level AC/Heat Gating (v0.2.19)
+| Config | Default | Role |
+|--------|---------|------|
+| `winter_start_month` | 10 (Oct) | Month when winter season begins |
+| `winter_end_month` | 4 (Apr) | Month when winter season ends |
+| `summer_start_month` | 5 (May) | Month when summer season begins |
+| `summer_end_month` | 9 (Sep) | Month when summer season ends |
+| `cool_exterior_threshold` | 70°F | Don't AC if outdoor temp below this |
+| `cool_interior_threshold` | 74°F | Don't AC if upstairs avg below this |
+| `heat_exterior_threshold` | 60°F | Don't heat if outdoor temp above this |
+| `heat_interior_threshold` | 68°F | Don't heat if upstairs avg above this |
+
+**Gating Logic:**
+- **Summer**: AC allowed if (month in May-Sept) AND (exterior ≥ cool_exterior_threshold) AND (upstairs_avg ≥ cool_interior_threshold)
+- **Winter**: Heat allowed if (month in Oct-April) AND (exterior ≤ heat_exterior_threshold) AND (upstairs_avg ≤ heat_interior_threshold)
+- **Shoulder**: System OFF (fans available for zone/manual control only)
+
+**UI Configuration:** Settings → Integrations → Adaptive HVAC → Configure → Step 3e (Season dates with month dropdowns, thresholds with sliders)
 
 ### Zone Configuration
 | Config | Default | Role |
@@ -483,36 +520,43 @@ Correct workflow:
 ### v0.2.19: System-Level AC/Heat Gating (✓ Implemented 2026-05-26)
 
 **Architecture Change:**
-Moved AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather + calendar season.
+Moved AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather + calendar season. **All configuration options are customizable via UI.**
 
 **Implemented:**
 - **Zone roles simplified:** Each zone controls local fans + makes local decisions. Zones do NOT gate system AC/heat. ✓
 - **System-level gating:** Uses `sensor.upstairs_average_temperature` + exterior weather from `weather.forecast_home` ✓
-- **Calendar season detection:** Oct-April = winter, May-Sept = summer (not forecast-based) ✓
-- **Season-aware thresholds:**
+- **Calendar season detection (customizable):** Default Oct-April = winter, May-Sept = summer (not forecast-based, adjustable per local climate) ✓
+- **Configurable season dates:**
+  - `winter_start_month` / `winter_end_month` (default: 10/4)
+  - `summer_start_month` / `summer_end_month` (default: 5/9)
+- **Configurable AC/Heat gating thresholds:**
+  - Exterior: cool ≥ 70°F, heat ≤ 60°F
+  - Interior: cool ≥ 74°F, heat ≤ 68°F
+- **Season-aware logic:**
   ```
-  SUMMER (May-Sept): AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
-  WINTER (Oct-April): Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
-  SHOULDER/OTHER: System OFF (fans/passive only, no thermostat)
+  SUMMER: AC allowed if exterior >= cool_exterior_threshold AND upstairs_avg >= cool_interior_threshold
+  WINTER: Heat allowed if exterior <= heat_exterior_threshold AND upstairs_avg <= heat_interior_threshold
+  SHOULDER: System OFF (fans/passive only, no thermostat)
   ```
 - **Dispatch-time gating:** `_dispatch_thermostat()` applies gating before sending commands — blocks AC/heat if thresholds not met ✓
 - **Detailed logging:** All gating decisions logged to `/config/adaptive_hvac_coordinator.log` for diagnostics ✓
+- **Config UI:** Settings → Integrations → Adaptive HVAC → Configure → Step 3e (month dropdowns, temperature sliders) ✓
 
 **Testing:**
 - Tested summer gating (May 26): exterior 85°F, upstairs 76°F → AC allowed ✓
-- Next: test winter gating (simulate Dec conditions)
-- Logs show proper zone aggregation + gating decision
+- Config flow working with month selection and threshold adjustment ✓
+- Logs show proper zone aggregation + gating decision with current threshold values ✓
 
 **Benefits:**
 - No fighting with weather (e.g., won't AC when outside is cool) ✓
 - Prevents unnecessary heating when it's warm out ✓
 - Cleaner zone model (zones = fan/local control only) ✓
 - True system-wide thermal decision based on aggregate signal ✓
+- **Customizable for any climate** — adjust season dates and thresholds without code changes ✓
 
 **Related entities:**
 - `sensor.upstairs_average_temperature` — aggregated interior signal (reads Caleb + Tia + Master)
 - `weather.forecast_home` — exterior conditions (reads current temp)
-- System config: `cool_exterior_threshold` (70°F), `cool_interior_threshold` (74°F), `heat_exterior_threshold` (60°F), `heat_interior_threshold` (68°F)
 
 ### Next Steps for Adaptive HVAC (v0.2.20+)
 
