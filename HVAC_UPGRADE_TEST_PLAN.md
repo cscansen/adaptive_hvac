@@ -1,27 +1,31 @@
-# Adaptive HVAC Integration Status — 2026-05-26
+# Adaptive HVAC Integration Status — 2026-05-26 (Updated)
 
-## Current State: SYSTEM RUNNING, ZONES CONFIGURED
+## Current State: SYSTEM COORDINATOR DISCOVERY FIXED, ZONE CONFIG RELOAD PENDING
 
 ### ✅ What's Working
 - **System coordinator fully deployed** on HA (v0.2.17 with regression fixes)
 - **All system entity inputs accessible:** thermostat, weather, windows, occupancy, sleep posture
 - **System config UI functional:** Settings → Integrations → Adaptive HVAC → gear icon works
-- **Zone entry created:** Caleb's Office zone configured with temp sensor
+- **Zone entry created:** Caleb's Office zone configured (UI + config storage)
 - **Zone auto-control toggle created:** `switch.adaptive_hvac_caleb_s_office_auto` (ON)
+- **Zone sensor entities CREATED:** `sensor.caleb_s_office_hvac_status` + `sensor.caleb_s_office_temp_trend` exist
+- **Dynamic zone discovery FIXED:** System coordinator now discovers zones at each update (not just startup)
 - **Old YAML automations still running** in parallel (hvac_cooling, hvac_heating_normal, etc.)
 
-### 🟡 Blocking Issue: Zone Sensor Entities Not Created
+### 🟡 Current Issue: Zone Coordinator Using Stale Config
 
-Zone sensors are **not being created** even though zone coordinator should exist:
-- ✗ Missing: `sensor.adaptive_hvac_calebs_office_status` (zone decision/mode)
-- ✗ Missing: `sensor.adaptive_hvac_calebs_office_trend` (temp trend)
-- System status stuck in `"Initializing..."` because it's waiting for zone decision data
+Zone sensors exist but show `SENSOR_FAILSAFE` because:
+- Zone config on disk was updated to use `sensor.caleb_s_office_hygrometer_temperature` ✓
+- But zone coordinator **in memory** still has the old garage sensor config
+- Root cause: HA cached the old zone entry; reload/restart didn't pick up the new config
 
-**Root Cause:** Unknown — sensor platform async_setup_entry not creating zone entities
-- Zone switch created OK, so zone entry is recognized
-- Likely issue: Zone coordinator not accessible in `hass.data[DOMAIN]` when sensor platform runs, OR sensor platform not being called for zone entry
+**Next step:** Need to hard-restart HA *Docker container* (not just services) to force config reload from disk
 
-**Investigation needed:** Check HA entity registry and platform setup logs (requires deeper debugging)
+### What Was Fixed This Session
+1. **Root cause identified:** System coordinator was discovering zones during its own setup (before zones existed). Fixed by deferring discovery to update time.
+2. **Zone sensor entities verified created** with correct unique_id patterns
+3. **Zone config corrected on disk** with proper Caleb's office temperature sensor
+4. **Code deployed:** Dynamic zone discovery in coordinator.py + cleaner __init__.py
 
 ---
 
