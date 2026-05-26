@@ -262,7 +262,17 @@ Thermostat `fan_mode`: `on` = continuous circulation, `auto` = only when HVAC cy
 
 The **`adaptive_hvac` custom HACS integration** (v0.2.18, **zone aggregation working**) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
 
-**Status (2026-05-26)**: Zone aggregation fully functional. SystemCoordinator discovers multiple zones dynamically and correctly aggregates their thermal requests into system-level HVAC decisions (thermostat mode/setpoint, whole-house fan, zone fans). Tested with 2 zones (Caleb's Office, Tia's Office). Ready for A/B testing against existing YAML automations.
+**Status (2026-05-26)**: Zone aggregation fully functional. SystemCoordinator discovers multiple zones dynamically and correctly aggregates their thermal requests into system-level HVAC decisions (thermostat mode/setpoint, whole-house fan, zone fans). Tested with 2 zones (Caleb's Office, Tia's Office). Primary zone strategy implemented: "Upstairs Main" zone averages multiple sensors and gates AC activation; Caleb/Tia zones control individual fans independently.
+
+### Upstairs Average Temperature Sensor
+**Entity:** `sensor.upstairs_average_temperature` (in `templates.yaml`)
+
+Averages three temperature sensors to create a representative "whole upstairs" thermal input for primary zone decision-making:
+- **Caleb's Office** (`sensor.caleb_s_office_hygrometer_temperature`)
+- **Tia's Office** (`sensor.tias_office_hygrometer_temperature`)
+- **Master Bedroom** (`sensor.meter_pro_2689_temperature`) — included to bring average down (more AC air piped there)
+
+**Why this works:** Master bedroom's cooler temperature (due to AC circulation) moderates the upstairs average, preventing the system from over-cooling based on office sensors alone.
 
 ### Why This Exists
 The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML automations with hardcoded entity IDs, making it inflexible and hard to reuse. This integration:
@@ -309,6 +319,35 @@ The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML 
 | **Cooling thresholds** | comfort=70°F, passive=72°F, escalate=74°F, emergency=78°F | Temperature decision tree |
 | **Humidity trigger** | 55% at ≥72°F | Passive mode trigger (high humidity path) |
 | **Per-mode fan speeds** | comfort=0%, passive=33%, escalate=50%, emergency=100% | Zone fan control (null = skip, 0 = off, 1-100 = %) |
+
+### Recommended Zone Setup (Multi-Zone Primary Strategy)
+
+**Upstairs Main** (primary zone — gates AC activation)
+- **Temp sensors:** `sensor.upstairs_average_temperature` (averaged Caleb + Tia + Master)
+- **Fans:** (none — no fan control for this zone)
+- **Primary zone:** `true` ✓
+- **Auto-control:** ON
+- **Purpose:** Represents whole-upstairs thermal state; only this zone's cool/heat request activates thermostat
+
+**Caleb's Office** (secondary zone — controls own fans)
+- **Temp sensors:** `sensor.caleb_s_office_hygrometer_temperature`
+- **Fans:** `fan.caleb_office_ceiling`
+- **Primary zone:** `false`
+- **Auto-control toggle:** `switch.adaptive_hvac_caleb_s_office_auto` (ON = auto fans, OFF = user-only)
+- **Purpose:** Thermal autonomy; fans respond to office temp/humidity independently
+
+**Tia's Office** (secondary zone — controls own fans)
+- **Temp sensors:** `sensor.tias_office_hygrometer_temperature`
+- **Fans:** `fan.tia_office_ceiling_fan`
+- **Primary zone:** `false`
+- **Auto-control toggle:** `switch.adaptive_hvac_tias_office_auto`
+- **Purpose:** Thermal autonomy; fans respond to office temp/humidity independently
+
+**Downstairs** (monitoring only — optional)
+- **Temp sensors:** `sensor.downstairs_thermostat_temperature`
+- **Fans:** (none)
+- **Primary zone:** `false`
+- **Purpose:** Setback and emergency-heat monitoring only; thermostat location (cooler due to AC output)
 
 ### Per-zone entities
 | Entity | Description |
