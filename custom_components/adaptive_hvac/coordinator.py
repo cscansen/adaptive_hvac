@@ -88,10 +88,23 @@ class ZoneCoordinator(DataUpdateCoordinator):
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
 
+        # Log zone config for debugging
+        _LOGGER.info(f"ZoneCoordinator init for {zone_name}")
+        _LOGGER.info(f"  zone_config keys: {list(zone_config.keys())}")
+        _LOGGER.info(f"  temp_sensors: {zone_config.get('temp_sensors')}")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[ZoneCoordinator.__init__] {zone_name}\n")
+            f.write(f"  zone_config keys: {list(zone_config.keys())}\n")
+            f.write(f"  temp_sensors: {zone_config.get('temp_sensors')}\n")
+
     def _read_temp(self) -> float:
         """Read and average zone temperature sensors."""
         temp_entities = self.zone_config.get("temp_sensors", [])
+        _LOGGER.debug(f"_read_temp for {self.zone_name}: temp_entities={temp_entities}")
         if not temp_entities:
+            _LOGGER.warning(f"_read_temp {self.zone_name}: NO temp_entities configured!")
+            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                f.write(f"[_read_temp] {self.zone_name}: NO temp_entities\n")
             return 0.0
 
         temps = []
@@ -99,11 +112,22 @@ class ZoneCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(entity_id)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
-                    temps.append(float(state.state))
-                except ValueError:
-                    pass
+                    temp_val = float(state.state)
+                    temps.append(temp_val)
+                    _LOGGER.debug(f"  {entity_id}={temp_val}°F")
+                except ValueError as e:
+                    _LOGGER.warning(f"  {entity_id}: invalid state '{state.state}': {e}")
+            else:
+                # Sensor not available yet - this might be a startup timing issue
+                # Return None to indicate data is unavailable, not 0.0 (which triggers failsafe)
+                state_info = f"state={state.state if state else 'NOT FOUND'}"
+                _LOGGER.info(f"  {entity_id}: {state_info} (sensor may not be loaded yet)")
+                with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                    f.write(f"  {entity_id}: {state_info}\n")
 
-        return sum(temps) / len(temps) if temps else 0.0
+        result = sum(temps) / len(temps) if temps else 0.0
+        _LOGGER.debug(f"_read_temp {self.zone_name}: avg temp={result}°F from {len(temps)} sensors")
+        return result
 
     def _read_humidity(self) -> Optional[float]:
         """Read humidity sensor(s) — average if multiple."""
@@ -438,7 +462,11 @@ class SystemCoordinator(DataUpdateCoordinator):
             and self.hass.data.get(DOMAIN, {}).get(entry.entry_id) is not None
         ]
         self.zone_coordinators = [z for z in active_zones if z is not None]
-        _LOGGER.debug(f"System found {len(self.zone_coordinators)} active zone(s)")
+        _LOGGER.info(f"System coordinator update: found {len(self.zone_coordinators)} active zone(s)")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[SystemCoordinator._async_update_data] {len(self.zone_coordinators)} zones\n")
+            for z in self.zone_coordinators:
+                f.write(f"  - {z.zone_name}\n")
 
         # Get all zone decisions (trigger zone coordinators)
         zone_decisions = []
@@ -450,13 +478,16 @@ class SystemCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.error(f"Error updating zone {coord.zone_name}: {e}")
 
-        # If no zone decisions, return safe idle
+        # If no zone decisions, return safe idle (but set last_decision)
         if not zone_decisions:
-            return SystemDecision(
+            decision = SystemDecision(
                 thermostat_hvac_mode="off",
                 thermostat_setpoint=None,
                 status="No zone data available",
             )
+            self.last_decision = decision
+            _LOGGER.info("System coordinator: no zone data available")
+            return decision
 
         # Read system inputs
         outdoor_temp, forecast_high, forecast_low, forecast_high_7day = self._read_weather()
