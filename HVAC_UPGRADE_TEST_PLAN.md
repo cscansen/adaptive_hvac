@@ -51,14 +51,32 @@
 
 ## Next Steps
 
-### ✅ Zone Aggregation Complete
+### ✅ Zone Aggregation Complete (v0.2.18)
 The integration now has end-to-end functionality:
 - Zone coordinators read local temperature/humidity/occupancy
 - System coordinator aggregates zone thermal requests
 - System makes thermostat and fan decisions
 - Decisions are dispatched to climate entity and fans
 
-### 📋 Testing Checklist
+### 🔄 Planned: System-Level AC/Heat Gating (v0.2.19)
+**Architecture shift:** Move AC/heat triggering from zone-based to system-level using aggregated temperature + exterior weather.
+
+**Current issue being fixed:**
+- Primary zone selection logic is complex and sometimes unpredictable
+- Individual room temps can block/force system decisions unnecessarily
+
+**Solution:**
+- Use `sensor.upstairs_average_temperature` (aggregate of Caleb + Tia + Master) for AC/heat gating
+- Add exterior temperature check from `weather.forecast_home`
+- Implement season-aware thresholds:
+  - **Summer (May-Sept):** AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
+  - **Winter (Oct-April):** Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
+  - **Otherwise:** System OFF (passive/fans only)
+- Zones remain simple: control local fans, contribute info, don't gate system
+
+**Expected benefit:** System won't fight with weather; cleaner decision logic.
+
+### 📋 Testing Checklist (v0.2.18 current)
 - [ ] Run `force_evaluate` service and verify system decisions in logs
 - [ ] Monitor zone sensors over 30min+ to verify trend calculations
 - [ ] Test with multiple zones (create Tia's Office zone)

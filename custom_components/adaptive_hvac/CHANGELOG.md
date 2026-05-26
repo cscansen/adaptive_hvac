@@ -4,6 +4,22 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.19] - Unreleased (In Planning)
+
+### Changed
+- **Architecture:** Move AC/heat gating logic from zone-based (primary zone) to system-level
+- **System-level decision making:** Uses aggregated temperature sensor + exterior weather for thermostat gating
+- **Season-aware thresholds:** Different AC/heat trigger temps based on time of year (Oct-April = winter, May-Sept = summer)
+- **Zone responsibilities simplified:** Zones control local fans and make local decisions; system controls thermostat based on aggregate signal
+
+### Added
+- Support for exterior temperature consideration in AC/heat gating (uses `weather.forecast_home`)
+- Season-based threshold configuration (heating/cooling enable/disable dates)
+- System fallback: thermostat OFF if thresholds not met (passive mode only)
+
+### Fixed
+- Primary zone selection logic: replaced with system-level aggregate signal (more predictable, cleaner)
+
 ## [0.2.18] - 2026-05-26
 
 ### Fixed
