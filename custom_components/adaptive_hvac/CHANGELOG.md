@@ -9,14 +9,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - **Architecture:** Move AC/heat gating logic from zone-based (primary zone) to system-level
 - **System-level decision making:** Uses aggregated temperature sensor + exterior weather for thermostat gating
-- **Season-aware thresholds:** Different AC/heat trigger temps based on time of year (Oct-April = winter, May-Sept = summer)
+- **Season-aware thresholds:** Different AC/heat trigger temps based on time of year (customizable: default Oct-April = winter, May-Sept = summer)
 - **Zone responsibilities simplified:** Zones control local fans and make local decisions; system controls thermostat based on aggregate signal
 - **Thermostat dispatch:** Now applies system-level gating before sending commands; blocks AC/heat if thresholds not met
+- **All season dates and thresholds now configurable** via UI (Settings → Integrations → Adaptive HVAC → Configure)
 
 ### Added
 - Support for exterior temperature consideration in AC/heat gating (reads `weather.forecast_home`)
-- Calendar-based season detection (Oct-April = winter, May-Sept = summer)
-- System gating thresholds (configurable: summer cool 70°F exterior + 74°F upstairs, winter heat 60°F exterior + 68°F upstairs)
+- Calendar-based season detection with **customizable month ranges** (default: Oct-April = winter, May-Sept = summer)
+- **Configurable season dates** in system config:
+  - `winter_start_month` (default: 10)
+  - `winter_end_month` (default: 4)
+  - `summer_start_month` (default: 5)
+  - `summer_end_month` (default: 9)
+- **Configurable AC/heat gating thresholds** in system config:
+  - `cool_exterior_threshold` (default: 70°F)
+  - `cool_interior_threshold` (default: 74°F)
+  - `heat_exterior_threshold` (default: 60°F)
+  - `heat_interior_threshold` (default: 68°F)
+- Config UI with month dropdown selectors and temperature threshold sliders
 - Upstairs average temperature sensor reading (`sensor.upstairs_average_temperature` — aggregated: Caleb + Tia + Master)
 - Detailed gating logs in `/config/adaptive_hvac_coordinator.log` for diagnostics
 

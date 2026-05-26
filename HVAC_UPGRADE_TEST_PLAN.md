@@ -64,10 +64,15 @@ The integration now has true system-wide AC/heat control:
 - Zone coordinators read local temperature/humidity/occupancy → output local fan commands + thermal requests
 - System coordinator aggregates zone thermal requests → determines if AC/heat should be activated
 - **System-level gating applied at dispatch time** based on:
-  - Calendar season (Oct-April = winter, May-Sept = summer)
+  - Calendar season (customizable: default Oct-April = winter, May-Sept = summer)
   - Exterior temperature from `weather.forecast_home`
   - Interior aggregate temp from `sensor.upstairs_average_temperature`
-  - Configurable thresholds (summer 70°F/74°F, winter 60°F/68°F)
+  - **All thresholds configurable via UI** (no code changes needed)
+- **Configuration options (all editable in HA UI):**
+  - Season dates: `winter_start_month`, `winter_end_month`, `summer_start_month`, `summer_end_month`
+  - AC thresholds: `cool_exterior_threshold` (70°F), `cool_interior_threshold` (74°F)
+  - Heat thresholds: `heat_exterior_threshold` (60°F), `heat_interior_threshold` (68°F)
+- **UI Access:** Settings → Integrations → Adaptive HVAC → Configure → Step 3e
 - **Result:** AC/heat only activates when weather + interior conditions allow
 - **Zones remain autonomous:** Can request heating/cooling, but system gates activation
 - **Benefits:**
@@ -75,6 +80,7 @@ The integration now has true system-wide AC/heat control:
   - Won't heat when warm outside (use passive only)
   - Cleaner decision logic (no zone conflict)
   - True system-wide thermal decision based on aggregate signal
+  - **Fully customizable for any climate without editing code**
 
 ### 📋 Testing Checklist (v0.2.18 current)
 - [ ] Run `force_evaluate` service and verify system decisions in logs
