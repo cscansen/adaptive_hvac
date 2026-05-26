@@ -454,6 +454,8 @@ class SystemCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> SystemDecision:
         """Fetch zone decisions and compute system decision."""
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[_async_update_data] START\n")
         # Dynamically discover zone coordinators (in case new zones were added since startup)
         active_zones = [
             self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
@@ -467,16 +469,41 @@ class SystemCoordinator(DataUpdateCoordinator):
             f.write(f"[SystemCoordinator._async_update_data] {len(self.zone_coordinators)} zones\n")
             for z in self.zone_coordinators:
                 f.write(f"  - {z.zone_name}\n")
+            f.write(f"[INSIDE WITH] About to close first with block\n")
+
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[MARKER] About to start aggregation\n")
 
         # Get all zone decisions (trigger zone coordinators)
         zone_decisions = []
+        _LOGGER.info(f"System coordinator: aggregating decisions from {len(self.zone_coordinators)} zones")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[Aggregation] Processing {len(self.zone_coordinators)} zones\n")
+
         for coord in self.zone_coordinators:
             try:
-                decision = await coord.async_request_refresh()
+                _LOGGER.debug(f"  Refreshing zone: {coord.zone_name}")
+                await coord.async_request_refresh()
+                decision = coord.last_decision
+                _LOGGER.debug(f"    refresh complete, last_decision: {decision}")
+
                 if decision:
-                    zone_decisions.append(coord.last_decision)
+                    zone_decisions.append(decision)
+                    _LOGGER.info(f"    ✓ Added zone decision: {decision.status}")
+                    with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                        f.write(f"  {coord.zone_name}: status={decision.status}\n")
+                else:
+                    _LOGGER.warning(f"    ✗ Zone has no decision after refresh")
+                    with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                        f.write(f"  {coord.zone_name}: NO DECISION\n")
             except Exception as e:
-                _LOGGER.error(f"Error updating zone {coord.zone_name}: {e}")
+                _LOGGER.error(f"Error updating zone {coord.zone_name}: {e}", exc_info=True)
+                with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                    f.write(f"  {coord.zone_name}: ERROR={e}\n")
+
+        _LOGGER.info(f"System coordinator: collected {len(zone_decisions)} zone decisions")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[Aggregation] Collected {len(zone_decisions)} decisions\n")
 
         # If no zone decisions, return safe idle (but set last_decision)
         if not zone_decisions:
@@ -486,7 +513,9 @@ class SystemCoordinator(DataUpdateCoordinator):
                 status="No zone data available",
             )
             self.last_decision = decision
-            _LOGGER.info("System coordinator: no zone data available")
+            _LOGGER.info("System coordinator: no valid zone data available")
+            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                f.write(f"[Aggregation] No zone decisions - returning idle\n")
             return decision
 
         # Read system inputs
@@ -584,6 +613,8 @@ class SystemCoordinator(DataUpdateCoordinator):
         await self._dispatch_fans(decision, zone_decisions)
 
         _LOGGER.debug(f"System decision: {decision.thermostat_hvac_mode} {decision.thermostat_setpoint}°F - {decision.status}")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[_async_update_data] decision={decision.status}\n")
 
         return decision
 
