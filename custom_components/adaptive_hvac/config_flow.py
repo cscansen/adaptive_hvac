@@ -445,60 +445,104 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, entry: config_entries.ConfigEntry) -> None:
         self._entry = entry
+        self.system_data: Dict[str, Any] = {}
 
     async def async_step_init(self, user_input=None):
-        """Handle options for system entry."""
+        """Step 1: Thermostat & Weather."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            self.system_data = user_input
+            return await self.async_step_entities()
 
         defaults = {**self._entry.data, **self._entry.options}
-
-        # Normalize values to lists for multi-select fields
-        for field in ["occupancy_entities"]:
-            val = defaults.get(field)
-            if val is None or (isinstance(val, str) and not val):
-                defaults[field] = []
-            elif isinstance(val, str):
-                defaults[field] = [val]
-            # else: already a list
-
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(_system_schema_dict(defaults)),
-            description_placeholders={
-                "info": """
-**Required Entities**
-- Thermostat: Climate entity that controls heating/cooling
-- Weather: Forecast source (for pre-cool/pre-heat logic)
+            data_schema=vol.Schema({
+                vol.Required("thermostat_entity", default=defaults.get("thermostat_entity", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="climate")
+                ),
+                vol.Required("weather_entity", default=defaults.get("weather_entity", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="weather")
+                ),
+            }),
+            description_placeholders={"step_title": "Step 1/3: Thermostat & Weather"},
+        )
 
-**House-Level Sensors** (Optional)
-- Windows: Binary sensor — if ON, AC/heat OFF, fans ON for passive ventilation
-- Sleep posture: Master bedroom sleep mode — gates heating during sleep
-- Occupancy: When all OFF for 8+ hours, triggers away setback temps
-- Solar: Production sensor — high solar triggers AC escalation (system-dependent)
+    async def async_step_entities(self, user_input=None):
+        """Step 2: House-level sensors."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_thresholds()
 
-**Temperature Setpoints** (What temps to cool/heat to)
-- AC setpoint: Target when cooling (default 68°F)
-- Heat setpoint: Target when heating (default 68°F)
+        defaults = {**self._entry.data, **self._entry.options}
+        # Normalize occupancy_entities to list
+        occ = defaults.get("occupancy_entities", [])
+        if isinstance(occ, str):
+            defaults["occupancy_entities"] = [occ] if occ else []
 
-**Heating Triggers** (When to activate heat)
-- Heat threshold: Below this, heat activates (default 68°F)
-- Emergency heat: Always on below this (default 55°F)
+        return self.async_show_form(
+            step_id="entities",
+            data_schema=vol.Schema({
+                vol.Optional("windows_assumed_open_sensor", default=defaults.get("windows_assumed_open_sensor", "binary_sensor.windows_assumed_open")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="binary_sensor")
+                ),
+                vol.Optional("sleep_posture_entity", default=defaults.get("sleep_posture_entity", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="input_boolean")
+                ),
+                vol.Optional("occupancy_entities", default=defaults.get("occupancy_entities", [])): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="binary_sensor", multiple=True)
+                ),
+                vol.Optional("solar_entity", default=defaults.get("solar_entity", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+            }),
+            description_placeholders={"step_title": "Step 2/3: House-Level Sensors (Optional)"},
+        )
 
-**Passive Cooling & Equalization** (Multi-zone balancing)
-- Passive fan threshold: Hottest zone above this → whole-house fan ON first (default 70°F)
-- Escalate downstairs: Coldest occupied zone must be above this for AC (default 68°F)
-- Escalate upstairs: Hottest occupied zone must be above this for AC (default 74°F)
+    async def async_step_thresholds(self, user_input=None):
+        """Step 3: Temperature thresholds and settings."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return self.async_create_entry(title="", data=self.system_data)
 
-**Away Mode Setback** (Temps when unoccupied 8+ hours)
-- Cool setpoint: Away cooling target (default 76°F)
-- Heat setpoint: Away heating target (default 62°F)
-
-**Other**
-- Solar trigger: Watts above this triggers AC escalation (default 2000W)
-- Window fan speed: Circulation speed when windows open (default 25%)
-            """
-            },
+        defaults = {**self._entry.data, **self._entry.options}
+        return self.async_show_form(
+            step_id="thresholds",
+            data_schema=vol.Schema({
+                vol.Optional("ac_setpoint", default=defaults.get("ac_setpoint", 68.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_setpoint", default=defaults.get("heat_setpoint", 68.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_threshold", default=defaults.get("heat_threshold", 68.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=72, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("emergency_heat_threshold", default=defaults.get("emergency_heat_threshold", 55.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=60, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("setback_cool_temp", default=defaults.get("setback_cool_temp", 76.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("setback_heat_temp", default=defaults.get("setback_heat_temp", 62.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=68, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("passive_fan_threshold", default=defaults.get("passive_fan_threshold", 70.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_downstairs_temp", default=defaults.get("escalate_enabled_downstairs_temp", 68.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=75, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("escalate_enabled_upstairs_temp", default=defaults.get("escalate_enabled_upstairs_temp", 74.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=60, max=85, step=0.5, unit_of_measurement="°F")
+                ),
+                vol.Optional("ac_trigger_solar_watts", default=defaults.get("ac_trigger_solar_watts", 2000.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=500, max=10000, step=100, unit_of_measurement="W")
+                ),
+                vol.Optional("window_fan_speed", default=defaults.get("window_fan_speed", 25.0)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
+                ),
+            }),
+            description_placeholders={"step_title": "Step 3/3: Thresholds & Settings"},
         )
 
 
