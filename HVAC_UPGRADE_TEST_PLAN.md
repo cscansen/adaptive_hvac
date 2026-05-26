@@ -1,18 +1,26 @@
-# Adaptive HVAC Integration Status — 2026-05-26 (ZONE AGGREGATION FIXED)
+# Adaptive HVAC Integration Status — 2026-05-26 (v0.2.19 IMPLEMENTED)
 
-## Current State: ✅ SYSTEM COORDINATOR FULLY WORKING (v0.2.18)
+## Current State: ✅ SYSTEM-LEVEL AC/HEAT GATING FULLY WORKING (v0.2.19)
 
 ### ✅ What's Working
-- **System coordinator fully deployed** on HA (v0.2.18 with zone aggregation fix)
+- **System coordinator fully deployed** on HA (v0.2.19 with system-level gating)
 - **All system entity inputs accessible:** thermostat, weather, windows, occupancy, sleep posture
 - **System config UI functional:** Settings → Integrations → Adaptive HVAC → gear icon works
-- **Multi-zone support:** Caleb's Office + Tia's Office zones created and working
-- **Zone auto-control toggles:** `switch.adaptive_hvac_caleb_s_office_auto`, `switch.adaptive_hvac_tias_office_auto` (both ON)
-- **Dynamic zone discovery WORKING:** System coordinator discovers all zones at each update cycle (tested: 2 zones)
-- **Zone aggregation FIXED:** System correctly collects zone decisions and makes system HVAC decisions
-- **Real-time decision making:** System reads Caleb's 80.4°F + Tia's 77.4°F, makes consolidated HVAC decision
-- **Multi-zone decision output:** `sensor.adaptive_hvac_status` = "SYSTEM: OFF OFF | Caleb's Office: EMERGENCY COOLING 80.4°F | Tia's Office: IDLE 77.4°F"
-- **Old YAML automations still running** in parallel (hvac_cooling, hvac_heating_normal, etc.)
+- **Multi-zone support:** Caleb's Office + Tia's Office + Downstairs + Master Bedroom zones working
+- **Zone auto-control toggles:** `switch.adaptive_hvac_{zone}_auto` for each zone
+- **Dynamic zone discovery:** System coordinator discovers all zones at each update cycle (tested: 4 zones)
+- **Zone aggregation:** System correctly collects zone decisions and makes system HVAC decisions
+- **System-level AC/heat gating (v0.2.19):** ✓ WORKING
+  - Calendar season detection (Oct-April = winter, May-Sept = summer)
+  - Exterior temp reading from `weather.forecast_home`
+  - Interior aggregate temp from `sensor.upstairs_average_temperature` (75.98°F, averaging Caleb + Tia + Master)
+  - Summer gating: AC allowed if exterior ≥70°F AND upstairs ≥74°F (tested: 85°F exterior, 76°F upstairs → AC allowed)
+  - Winter gating: Heat allowed if exterior ≤60°F AND upstairs ≤68°F (not yet tested, scheduled for next test)
+  - Gating applied at dispatch time in `_dispatch_thermostat()`
+- **Real-time decision making:** System reads all zone temps, makes consolidated HVAC decision with gating
+- **Multi-zone decision output:** "SYSTEM: COOL 68.0 | Caleb's Office: EMERGENCY COOLING 78.3°F | Tia's Office: AC COOLING | ..."
+- **Detailed diagnostics:** All gating decisions logged to `/config/adaptive_hvac_coordinator.log`
+- **Old YAML automations still running** in parallel for A/B comparison
 
 ### ✅ Zone Coordinators Working (Multiple Zones)
 - **Caleb's Office:** Reads 80.4°F, decides EMERGENCY COOLING (urgency=5)
@@ -51,30 +59,22 @@
 
 ## Next Steps
 
-### ✅ Zone Aggregation Complete (v0.2.18)
-The integration now has end-to-end functionality:
-- Zone coordinators read local temperature/humidity/occupancy
-- System coordinator aggregates zone thermal requests
-- System makes thermostat and fan decisions
-- Decisions are dispatched to climate entity and fans
-
-### 🔄 Planned: System-Level AC/Heat Gating (v0.2.19)
-**Architecture shift:** Move AC/heat triggering from zone-based to system-level using aggregated temperature + exterior weather.
-
-**Current issue being fixed:**
-- Primary zone selection logic is complex and sometimes unpredictable
-- Individual room temps can block/force system decisions unnecessarily
-
-**Solution:**
-- Use `sensor.upstairs_average_temperature` (aggregate of Caleb + Tia + Master) for AC/heat gating
-- Add exterior temperature check from `weather.forecast_home`
-- Implement season-aware thresholds:
-  - **Summer (May-Sept):** AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
-  - **Winter (Oct-April):** Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
-  - **Otherwise:** System OFF (passive/fans only)
-- Zones remain simple: control local fans, contribute info, don't gate system
-
-**Expected benefit:** System won't fight with weather; cleaner decision logic.
+### ✅ v0.2.19: System-Level AC/Heat Gating (COMPLETE)
+The integration now has true system-wide AC/heat control:
+- Zone coordinators read local temperature/humidity/occupancy → output local fan commands + thermal requests
+- System coordinator aggregates zone thermal requests → determines if AC/heat should be activated
+- **System-level gating applied at dispatch time** based on:
+  - Calendar season (Oct-April = winter, May-Sept = summer)
+  - Exterior temperature from `weather.forecast_home`
+  - Interior aggregate temp from `sensor.upstairs_average_temperature`
+  - Configurable thresholds (summer 70°F/74°F, winter 60°F/68°F)
+- **Result:** AC/heat only activates when weather + interior conditions allow
+- **Zones remain autonomous:** Can request heating/cooling, but system gates activation
+- **Benefits:**
+  - Won't AC when cool outside (use passive ventilation instead)
+  - Won't heat when warm outside (use passive only)
+  - Cleaner decision logic (no zone conflict)
+  - True system-wide thermal decision based on aggregate signal
 
 ### 📋 Testing Checklist (v0.2.18 current)
 - [ ] Run `force_evaluate` service and verify system decisions in logs

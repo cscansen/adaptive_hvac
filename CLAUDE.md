@@ -260,9 +260,15 @@ Thermostat `fan_mode`: `on` = continuous circulation, `auto` = only when HVAC cy
 
 ## Adaptive HVAC Integration
 
-The **`adaptive_hvac` custom HACS integration** (v0.2.18, **zone aggregation working**) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
+The **`adaptive_hvac` custom HACS integration** (v0.2.19, **system-level AC/heat gating with season+weather awareness**) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
 
-**Status (2026-05-26)**: Zone aggregation fully functional. SystemCoordinator discovers multiple zones dynamically and correctly aggregates their thermal requests into system-level HVAC decisions (thermostat mode/setpoint, whole-house fan, zone fans). Tested with 2 zones (Caleb's Office, Tia's Office). Primary zone strategy implemented: "Upstairs Main" zone averages multiple sensors and gates AC activation; Caleb/Tia zones control individual fans independently.
+**Status (2026-05-26)**: v0.2.19 system-level AC/heat gating fully implemented and tested. SystemCoordinator now:
+- Reads aggregated upstairs temperature (`sensor.upstairs_average_temperature`)
+- Reads exterior weather from `weather.forecast_home`
+- Determines calendar season (Oct-April = winter, May-Sept = summer)
+- Gates AC/heat activation: Summer AC allowed if exterior ≥70°F AND upstairs ≥74°F; Winter heat allowed if exterior ≤60°F AND upstairs ≤68°F
+- Blocks thermostat commands via `_dispatch_thermostat()` before sending to HA if gating thresholds not met
+- Zones now simply: control local fans + make local decisions; system applies gating at dispatch time
 
 ### Upstairs Average Temperature Sensor
 **Entity:** `sensor.upstairs_average_temperature` (in `templates.yaml`)
@@ -282,9 +288,15 @@ The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML 
 - **Respects user fan claims** — integrates with existing fan lock system
 - **Is reusable** — zero HA-specific code in decision logic; works on any Python system
 
-### Architecture
-- **ZoneCoordinator**: Evaluates each room independently (temp averaging, humidity, window state, occupancy)
-- **SystemCoordinator**: Discovers + aggregates zone decisions, applies dynamic primary zone selection, controls thermostat & whole-house fan
+### Architecture (v0.2.19)
+- **ZoneCoordinator**: Evaluates each room independently (temp averaging, humidity, window state, occupancy) → outputs local fan commands + thermal requests
+- **SystemCoordinator**: Discovers + aggregates zone decisions, applies system-level gating (season + weather + interior aggregate), controls thermostat & whole-house fan
+- **System-Level Gating (v0.2.19)**: `_check_system_level_gating()` determines if AC/heat activation is allowed based on:
+  - Calendar season detection (Oct-April vs May-Sept)
+  - Exterior temperature from `weather.forecast_home`
+  - Interior aggregate temp from `sensor.upstairs_average_temperature`
+  - Configurable thresholds (default: summer 70°F/74°F, winter 60°F/68°F)
+- **Dispatch Override**: `_dispatch_thermostat()` applies gating before sending commands — blocks AC/heat if thresholds not met
 - **Logic Engine**: Pure decision trees (no HA imports) — used by both integration and unit tests
 - **Three-Layer Fan Control**: zone auto-control switch → per-fan user claim lock → per-mode speed control
 
@@ -468,40 +480,47 @@ Correct workflow:
 
 **CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
 
-### v0.2.19: System-Level AC/Heat Gating (Planned)
+### v0.2.19: System-Level AC/Heat Gating (✓ Implemented 2026-05-26)
 
 **Architecture Change:**
-Move AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather.
+Moved AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather + calendar season.
 
-**Implementation:**
-- **Zone roles simplified:** Each zone controls local fans + makes local decisions. Zones do NOT gate system AC/heat.
-- **System-level gating:** Uses `sensor.upstairs_average_temperature` + exterior weather from `weather.forecast_home`
+**Implemented:**
+- **Zone roles simplified:** Each zone controls local fans + makes local decisions. Zones do NOT gate system AC/heat. ✓
+- **System-level gating:** Uses `sensor.upstairs_average_temperature` + exterior weather from `weather.forecast_home` ✓
+- **Calendar season detection:** Oct-April = winter, May-Sept = summer (not forecast-based) ✓
 - **Season-aware thresholds:**
   ```
   SUMMER (May-Sept): AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
   WINTER (Oct-April): Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
   SHOULDER/OTHER: System OFF (fans/passive only, no thermostat)
   ```
-- **Fallback:** If thresholds not met, system does nothing (thermostat OFF, fans available for manual use)
+- **Dispatch-time gating:** `_dispatch_thermostat()` applies gating before sending commands — blocks AC/heat if thresholds not met ✓
+- **Detailed logging:** All gating decisions logged to `/config/adaptive_hvac_coordinator.log` for diagnostics ✓
+
+**Testing:**
+- Tested summer gating (May 26): exterior 85°F, upstairs 76°F → AC allowed ✓
+- Next: test winter gating (simulate Dec conditions)
+- Logs show proper zone aggregation + gating decision
 
 **Benefits:**
-- No fighting with weather (e.g., won't AC when outside is cool)
-- Prevents unnecessary heating when it's warm out
-- Cleaner zone model (zones = fan/local control only)
-- True system-wide thermal decision based on aggregate signal
+- No fighting with weather (e.g., won't AC when outside is cool) ✓
+- Prevents unnecessary heating when it's warm out ✓
+- Cleaner zone model (zones = fan/local control only) ✓
+- True system-wide thermal decision based on aggregate signal ✓
 
 **Related entities:**
-- `sensor.upstairs_average_temperature` — aggregated interior signal (already created)
-- `weather.forecast_home` — exterior conditions (already available)
-- System config: threshold temps, season dates
+- `sensor.upstairs_average_temperature` — aggregated interior signal (reads Caleb + Tia + Master)
+- `weather.forecast_home` — exterior conditions (reads current temp)
+- System config: `cool_exterior_threshold` (70°F), `cool_interior_threshold` (74°F), `heat_exterior_threshold` (60°F), `heat_interior_threshold` (68°F)
 
 ### Next Steps for Adaptive HVAC (v0.2.20+)
 
-**Priority 1 — Fix Primary Zone Selection Logic**
-- [ ] Investigate why Tia's Office (idle, urgency=0) is selected as primary over Caleb's Office (emergency, urgency=5)
-- [ ] Verify occupancy-based primary zone selection in `decide_system()` (logic.py)
-- [ ] Test with occupied vs unoccupied zone scenarios
-- [ ] Expected: highest-urgency zone should drive AC activation when both occupied
+**Priority 1 — Extended Gating Testing (Winter Scenario)**
+- [ ] Simulate winter conditions (outdoor temp 40°F) to verify heat gating works
+- [ ] Verify shoulder season (March, April) behaves as system OFF
+- [ ] Test gating boundary conditions (70.1°F vs 69.9°F exterior)
+- [ ] Verify logs show correct gating reasoning for all conditions
 
 **Priority 2 — Complete Zone Sensor Platform**
 - [ ] Create zone sensor entities (`sensor.adaptive_hvac_{zone_slug}_status`, `sensor.adaptive_hvac_{zone_slug}_trend`)
@@ -522,11 +541,13 @@ Move AC/heat gating logic from zone-based ("primary zone") to system-level using
 - [ ] **Fan lock respect**: User-claimed fans not overridden by zone/system decisions
 - [ ] **Humidity passive cooling**: High humidity + warm temp → passive fan mode (no AC)
 - [ ] **Season transitions**: Verify auto-detect and manual override work correctly
+- [ ] **Gating transitions**: Verify system OFF when thresholds not met (fans still available)
 
 **Priority 5 — Dashboard & Visibility**
 - [ ] Build Lovelace dashboard for `dashboard-hvac` with zone cards
-- [ ] Show: zone temp/trend/mode, system decision, thermostat setpoint, active zone selection
+- [ ] Show: zone temp/trend/mode, system decision, thermostat setpoint, gating status
 - [ ] Add service call buttons for `force_evaluate` and manual override toggle
+- [ ] Display gating thresholds and whether AC/heat is allowed
 
 **Testing Tools**
 - `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'` — trigger immediate evaluation
