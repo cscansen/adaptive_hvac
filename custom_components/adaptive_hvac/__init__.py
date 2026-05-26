@@ -64,7 +64,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             # Forward to platforms
             _LOGGER.info(f"Forwarding zone {zone_name} to sensor and switch platforms")
-            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+            try:
+                await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+                _LOGGER.info(f"Successfully forwarded zone {zone_name} to platforms")
+            except Exception as e:
+                _LOGGER.error(f"Failed to forward zone {zone_name} to platforms: {e}", exc_info=True)
+                raise
 
         entry.async_on_unload(entry.add_update_listener(async_reload_entry))
         return True
