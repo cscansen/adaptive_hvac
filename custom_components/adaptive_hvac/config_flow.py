@@ -12,6 +12,10 @@ from .const import (
     DOMAIN, ENTRY_TYPE_SYSTEM, ENTRY_TYPE_ZONE,
     DEFAULT_COMFORT_UPPER, DEFAULT_PASSIVE_THRESHOLD, DEFAULT_ESCALATE_THRESHOLD,
     DEFAULT_PASSIVE_FAN_SPEED, DEFAULT_ESCALATE_FAN_SPEED, DEFAULT_EMERGENCY_FAN_SPEED,
+    DEFAULT_WINTER_START_MONTH, DEFAULT_WINTER_END_MONTH,
+    DEFAULT_SUMMER_START_MONTH, DEFAULT_SUMMER_END_MONTH,
+    DEFAULT_COOL_EXTERIOR_THRESHOLD, DEFAULT_COOL_INTERIOR_THRESHOLD,
+    DEFAULT_HEAT_EXTERIOR_THRESHOLD, DEFAULT_HEAT_INTERIOR_THRESHOLD,
 )
 
 
@@ -339,7 +343,7 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 3d: Away Mode Setback — Temps when house is unoccupied 8+ hours."""
         if user_input is not None:
             self.system_data.update(user_input)
-            return await self.async_step_system_other()
+            return await self.async_step_system_gating()
 
         return self.async_show_form(
             step_id="system_setback",
@@ -353,8 +357,74 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
         )
 
+    async def async_step_system_gating(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        """Step 3e: System-Level AC/Heat Gating (v0.2.19) — Season dates and weather thresholds."""
+        if user_input is not None:
+            self.system_data.update(user_input)
+            return await self.async_step_system_other()
+
+        month_options = {str(i): f"{i:2d} - {self._month_name(i)}" for i in range(1, 13)}
+
+        return self.async_show_form(
+            step_id="system_gating",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "winter_start_month",
+                    default=str(DEFAULT_WINTER_START_MONTH),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value=str(i), label=f"{i:2d} - {self._month_name(i)}")
+                        for i in range(1, 13)
+                    ])
+                ),
+                vol.Optional(
+                    "winter_end_month",
+                    default=str(DEFAULT_WINTER_END_MONTH),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value=str(i), label=f"{i:2d} - {self._month_name(i)}")
+                        for i in range(1, 13)
+                    ])
+                ),
+                vol.Optional(
+                    "cool_exterior_threshold",
+                    default=DEFAULT_COOL_EXTERIOR_THRESHOLD,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=50, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional(
+                    "cool_interior_threshold",
+                    default=DEFAULT_COOL_INTERIOR_THRESHOLD,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional(
+                    "heat_exterior_threshold",
+                    default=DEFAULT_HEAT_EXTERIOR_THRESHOLD,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional(
+                    "heat_interior_threshold",
+                    default=DEFAULT_HEAT_INTERIOR_THRESHOLD,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=75, step=1, unit_of_measurement="°F")
+                ),
+            }),
+            description_placeholders={
+                "step_title": "Step 3e: System-Level AC/Heat Gating (v0.2.19)",
+                "help_text": "Season calendar dates and AC/heat activation thresholds based on exterior & interior temps",
+            },
+        )
+
+    @staticmethod
+    def _month_name(month: int) -> str:
+        """Return month name for display."""
+        months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return months[month] if 1 <= month <= 12 else ""
+
     async def async_step_system_other(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
-        """Step 3e: Other — Solar and fan circulation settings."""
+        """Step 3f: Other — Solar and fan circulation settings."""
         if user_input is not None:
             self.system_data.update(user_input)
             return self.async_create_entry(
@@ -512,8 +582,38 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("window_fan_speed", default=defaults.get("window_fan_speed", 25.0)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
                 ),
+                vol.Optional("winter_start_month", default=str(defaults.get("winter_start_month", DEFAULT_WINTER_START_MONTH))): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value=str(i), label=f"{i:2d} - {self._month_name(i)}")
+                        for i in range(1, 13)
+                    ])
+                ),
+                vol.Optional("winter_end_month", default=str(defaults.get("winter_end_month", DEFAULT_WINTER_END_MONTH))): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value=str(i), label=f"{i:2d} - {self._month_name(i)}")
+                        for i in range(1, 13)
+                    ])
+                ),
+                vol.Optional("cool_exterior_threshold", default=defaults.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=50, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("cool_interior_threshold", default=defaults.get("cool_interior_threshold", DEFAULT_COOL_INTERIOR_THRESHOLD)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=70, max=85, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_exterior_threshold", default=defaults.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=40, max=75, step=1, unit_of_measurement="°F")
+                ),
+                vol.Optional("heat_interior_threshold", default=defaults.get("heat_interior_threshold", DEFAULT_HEAT_INTERIOR_THRESHOLD)): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=55, max=75, step=1, unit_of_measurement="°F")
+                ),
             }),
         )
+
+    @staticmethod
+    def _month_name(month: int) -> str:
+        """Return month name for display."""
+        months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return months[month] if 1 <= month <= 12 else ""
 
 
 class ZoneOptionsFlow(config_entries.OptionsFlow):

@@ -48,6 +48,14 @@ from .const import (
     DEFAULT_WINTER_THRESHOLD,
     DEFAULT_IS_PRIMARY_ZONE,
     DEFAULT_AUTO_CONTROL_ENABLED,
+    DEFAULT_WINTER_START_MONTH,
+    DEFAULT_WINTER_END_MONTH,
+    DEFAULT_SUMMER_START_MONTH,
+    DEFAULT_SUMMER_END_MONTH,
+    DEFAULT_COOL_EXTERIOR_THRESHOLD,
+    DEFAULT_COOL_INTERIOR_THRESHOLD,
+    DEFAULT_HEAT_EXTERIOR_THRESHOLD,
+    DEFAULT_HEAT_INTERIOR_THRESHOLD,
 )
 from .logic import (
     ZoneState,
@@ -471,23 +479,44 @@ class SystemCoordinator(DataUpdateCoordinator):
         """
         Determine season from calendar month (not forecast-based).
 
-        Oct-April = winter
-        May-Sept = summer
+        Uses configurable season dates from system config.
+        Default: Oct-April = winter, May-Sept = summer
 
         Returns:
             "winter" or "summer"
         """
         month = dt_util.now().month
-        if 10 <= month or month <= 4:
-            return "winter"
+        winter_start = self.system_config.get("winter_start_month", DEFAULT_WINTER_START_MONTH)
+        winter_end = self.system_config.get("winter_end_month", DEFAULT_WINTER_END_MONTH)
+
+        # Convert to int if they came from config flow as strings
+        try:
+            winter_start = int(winter_start)
+            winter_end = int(winter_end)
+        except (ValueError, TypeError):
+            winter_start = DEFAULT_WINTER_START_MONTH
+            winter_end = DEFAULT_WINTER_END_MONTH
+
+        # Winter spans across year boundary if start > end (e.g., Oct-April)
+        if winter_start > winter_end:
+            # e.g., Oct (10) - Apr (4): month >= 10 OR month <= 4
+            if month >= winter_start or month <= winter_end:
+                return "winter"
+            else:
+                return "summer"
         else:
-            return "summer"
+            # e.g., Dec (12) - Feb (2): month >= 12 OR month <= 2 (edge case)
+            if month >= winter_start and month <= winter_end:
+                return "winter"
+            else:
+                return "summer"
 
     def _check_system_level_gating(self) -> tuple[bool, bool, str]:
         """
         Check system-level AC/heat gating based on season + weather + interior aggregate temp.
 
         v0.2.19: AC and heat activation is now determined at system level, not zone level.
+        Uses configurable season dates and gating thresholds.
 
         Returns:
             tuple of (allow_cool, allow_heat, reasoning)
@@ -500,11 +529,11 @@ class SystemCoordinator(DataUpdateCoordinator):
         outdoor_temp, _, _, _ = self._read_weather()
         upstairs_avg = self._read_upstairs_average_temp()
 
-        # Thresholds from config (v0.2.19)
-        cool_exterior_threshold = self.system_config.get("cool_exterior_threshold", 70.0)
-        cool_interior_threshold = self.system_config.get("cool_interior_threshold", 74.0)
-        heat_exterior_threshold = self.system_config.get("heat_exterior_threshold", 60.0)
-        heat_interior_threshold = self.system_config.get("heat_interior_threshold", 68.0)
+        # Thresholds from config (v0.2.19) with defaults
+        cool_exterior_threshold = self.system_config.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)
+        cool_interior_threshold = self.system_config.get("cool_interior_threshold", DEFAULT_COOL_INTERIOR_THRESHOLD)
+        heat_exterior_threshold = self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)
+        heat_interior_threshold = self.system_config.get("heat_interior_threshold", DEFAULT_HEAT_INTERIOR_THRESHOLD)
 
         reasoning_parts = []
 
