@@ -4,21 +4,25 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.2.19] - Unreleased (In Planning)
+## [0.2.19] - 2026-05-26
 
 ### Changed
 - **Architecture:** Move AC/heat gating logic from zone-based (primary zone) to system-level
 - **System-level decision making:** Uses aggregated temperature sensor + exterior weather for thermostat gating
 - **Season-aware thresholds:** Different AC/heat trigger temps based on time of year (Oct-April = winter, May-Sept = summer)
 - **Zone responsibilities simplified:** Zones control local fans and make local decisions; system controls thermostat based on aggregate signal
+- **Thermostat dispatch:** Now applies system-level gating before sending commands; blocks AC/heat if thresholds not met
 
 ### Added
-- Support for exterior temperature consideration in AC/heat gating (uses `weather.forecast_home`)
-- Season-based threshold configuration (heating/cooling enable/disable dates)
-- System fallback: thermostat OFF if thresholds not met (passive mode only)
+- Support for exterior temperature consideration in AC/heat gating (reads `weather.forecast_home`)
+- Calendar-based season detection (Oct-April = winter, May-Sept = summer)
+- System gating thresholds (configurable: summer cool 70°F exterior + 74°F upstairs, winter heat 60°F exterior + 68°F upstairs)
+- Upstairs average temperature sensor reading (`sensor.upstairs_average_temperature` — aggregated: Caleb + Tia + Master)
+- Detailed gating logs in `/config/adaptive_hvac_coordinator.log` for diagnostics
 
 ### Fixed
 - Primary zone selection logic: replaced with system-level aggregate signal (more predictable, cleaner)
+- Zone aggregation (v0.2.18): fixed zone decision collection from refresh return values
 
 ## [0.2.18] - 2026-05-26
 

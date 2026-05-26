@@ -452,6 +452,104 @@ class SystemCoordinator(DataUpdateCoordinator):
         state = self.hass.states.get(windows_entity)
         return state and state.state == "on" if state else False
 
+    def _read_upstairs_average_temp(self) -> Optional[float]:
+        """Read upstairs average temperature sensor (aggregated: Caleb + Tia + Master)."""
+        # v0.2.19: System-level gating uses aggregated interior temperature signal
+        upstairs_avg_entity = self.system_config.get("upstairs_average_temp_entity", "sensor.upstairs_average_temperature")
+        if not upstairs_avg_entity:
+            return None
+
+        state = self.hass.states.get(upstairs_avg_entity)
+        if state and state.state not in ("unknown", "unavailable"):
+            try:
+                return float(state.state)
+            except ValueError:
+                return None
+        return None
+
+    def _determine_calendar_season(self) -> str:
+        """
+        Determine season from calendar month (not forecast-based).
+
+        Oct-April = winter
+        May-Sept = summer
+
+        Returns:
+            "winter" or "summer"
+        """
+        month = dt_util.now().month
+        if 10 <= month or month <= 4:
+            return "winter"
+        else:
+            return "summer"
+
+    def _check_system_level_gating(self) -> tuple[bool, bool, str]:
+        """
+        Check system-level AC/heat gating based on season + weather + interior aggregate temp.
+
+        v0.2.19: AC and heat activation is now determined at system level, not zone level.
+
+        Returns:
+            tuple of (allow_cool, allow_heat, reasoning)
+
+            allow_cool: True if AC is allowed
+            allow_heat: True if heating is allowed
+            reasoning: Explanation of gating decision
+        """
+        calendar_season = self._determine_calendar_season()
+        outdoor_temp, _, _, _ = self._read_weather()
+        upstairs_avg = self._read_upstairs_average_temp()
+
+        # Thresholds from config (v0.2.19)
+        cool_exterior_threshold = self.system_config.get("cool_exterior_threshold", 70.0)
+        cool_interior_threshold = self.system_config.get("cool_interior_threshold", 74.0)
+        heat_exterior_threshold = self.system_config.get("heat_exterior_threshold", 60.0)
+        heat_interior_threshold = self.system_config.get("heat_interior_threshold", 68.0)
+
+        reasoning_parts = []
+
+        # If we can't read upstairs average, fall back to conservative OFF
+        if upstairs_avg is None:
+            reasoning_parts.append("Upstairs average temp unavailable (sensor not ready)")
+            return False, False, " | ".join(reasoning_parts)
+
+        reasoning_parts.append(f"Calendar: {calendar_season}")
+        reasoning_parts.append(f"Exterior: {outdoor_temp:.1f}°F")
+        reasoning_parts.append(f"Upstairs avg: {upstairs_avg:.1f}°F")
+
+        allow_cool = False
+        allow_heat = False
+
+        # Summer: AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
+        if calendar_season == "summer":
+            if outdoor_temp >= cool_exterior_threshold and upstairs_avg >= cool_interior_threshold:
+                allow_cool = True
+                reasoning_parts.append(f"Summer: AC ALLOWED (exterior {outdoor_temp:.1f}°F ≥ {cool_exterior_threshold}°F AND upstairs {upstairs_avg:.1f}°F ≥ {cool_interior_threshold}°F)")
+            else:
+                reasoning_parts.append(f"Summer: AC BLOCKED")
+                if outdoor_temp < cool_exterior_threshold:
+                    reasoning_parts.append(f"  (exterior {outdoor_temp:.1f}°F < {cool_exterior_threshold}°F)")
+                if upstairs_avg < cool_interior_threshold:
+                    reasoning_parts.append(f"  (upstairs {upstairs_avg:.1f}°F < {cool_interior_threshold}°F)")
+
+        # Winter: Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
+        elif calendar_season == "winter":
+            if outdoor_temp <= heat_exterior_threshold and upstairs_avg <= heat_interior_threshold:
+                allow_heat = True
+                reasoning_parts.append(f"Winter: HEAT ALLOWED (exterior {outdoor_temp:.1f}°F ≤ {heat_exterior_threshold}°F AND upstairs {upstairs_avg:.1f}°F ≤ {heat_interior_threshold}°F)")
+            else:
+                reasoning_parts.append(f"Winter: HEAT BLOCKED")
+                if outdoor_temp > heat_exterior_threshold:
+                    reasoning_parts.append(f"  (exterior {outdoor_temp:.1f}°F > {heat_exterior_threshold}°F)")
+                if upstairs_avg > heat_interior_threshold:
+                    reasoning_parts.append(f"  (upstairs {upstairs_avg:.1f}°F > {heat_interior_threshold}°F)")
+
+        # Shoulder (neither summer nor winter) — system OFF
+        else:
+            reasoning_parts.append("Shoulder season: System OFF (fans available, no thermostat)")
+
+        return allow_cool, allow_heat, " | ".join(reasoning_parts)
+
     async def _async_update_data(self) -> SystemDecision:
         """Fetch zone decisions and compute system decision."""
         with open("/config/adaptive_hvac_coordinator.log", "a") as f:
@@ -634,7 +732,11 @@ class SystemCoordinator(DataUpdateCoordinator):
         return False
 
     async def _dispatch_thermostat(self, decision: SystemDecision):
-        """Send thermostat commands."""
+        """
+        Send thermostat commands.
+
+        v0.2.19: Applies system-level AC/heat gating based on season + weather + interior aggregate temp.
+        """
         thermostat = self.system_config.get("thermostat_entity")
         if not thermostat:
             return
@@ -653,9 +755,37 @@ class SystemCoordinator(DataUpdateCoordinator):
                 "set_fan_mode",
                 {"entity_id": thermostat, "fan_mode": "on"},
             )
+            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                f.write(f"[_dispatch_thermostat] Window override: thermostat OFF\n")
             return
 
-        if decision.thermostat_hvac_mode == "off":
+        # v0.2.19: System-level gating (season + weather + interior aggregate temp)
+        allow_cool, allow_heat, gating_reasoning = self._check_system_level_gating()
+        _LOGGER.info(f"System gating: allow_cool={allow_cool}, allow_heat={allow_heat} | {gating_reasoning}")
+        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+            f.write(f"[_dispatch_thermostat] Gating: cool={allow_cool}, heat={allow_heat}\n")
+            f.write(f"  {gating_reasoning}\n")
+
+        # Apply gating: if mode is blocked by gating, force OFF
+        dispatch_mode = decision.thermostat_hvac_mode
+        dispatch_setpoint = decision.thermostat_setpoint
+
+        if dispatch_mode == "cool" and not allow_cool:
+            _LOGGER.info(f"System gating: AC blocked despite zone request. Reason: {gating_reasoning}")
+            dispatch_mode = "off"
+            dispatch_setpoint = None
+            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                f.write(f"[_dispatch_thermostat] AC blocked by gating\n")
+
+        elif dispatch_mode == "heat" and not allow_heat:
+            _LOGGER.info(f"System gating: Heat blocked despite zone request. Reason: {gating_reasoning}")
+            dispatch_mode = "off"
+            dispatch_setpoint = None
+            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
+                f.write(f"[_dispatch_thermostat] Heat blocked by gating\n")
+
+        # Dispatch gated decision
+        if dispatch_mode == "off":
             await self.hass.services.async_call(
                 "climate",
                 "set_hvac_mode",
@@ -665,14 +795,14 @@ class SystemCoordinator(DataUpdateCoordinator):
             await self.hass.services.async_call(
                 "climate",
                 "set_hvac_mode",
-                {"entity_id": thermostat, "hvac_mode": decision.thermostat_hvac_mode},
+                {"entity_id": thermostat, "hvac_mode": dispatch_mode},
             )
 
-            if decision.thermostat_setpoint:
+            if dispatch_setpoint:
                 await self.hass.services.async_call(
                     "climate",
                     "set_temperature",
-                    {"entity_id": thermostat, "temperature": decision.thermostat_setpoint},
+                    {"entity_id": thermostat, "temperature": dispatch_setpoint},
                 )
 
         # Set whole-house fan mode
