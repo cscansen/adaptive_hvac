@@ -260,7 +260,9 @@ Thermostat `fan_mode`: `on` = continuous circulation, `auto` = only when HVAC cy
 
 ## Adaptive HVAC Integration
 
-The **`adaptive_hvac` custom HACS integration** (v0.2.10+) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
+The **`adaptive_hvac` custom HACS integration** (v0.2.18, **zone aggregation working**) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
+
+**Status (2026-05-26)**: Zone aggregation fully functional. SystemCoordinator discovers multiple zones dynamically and correctly aggregates their thermal requests into system-level HVAC decisions (thermostat mode/setpoint, whole-house fan, zone fans). Tested with 2 zones (Caleb's Office, Tia's Office). Ready for A/B testing against existing YAML automations.
 
 ### Why This Exists
 The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML automations with hardcoded entity IDs, making it inflexible and hard to reuse. This integration:
@@ -393,6 +395,8 @@ Zone respects legacy fan lock system:
 7. Use `/api/services/adaptive_hvac/force_evaluate` to trigger immediate cycle
 
 ### Known Gaps & Future Work
+- **Primary zone selection tuning**: Dynamic logic works but may need refinement for multi-zone occupancy scenarios (e.g., which zone is "primary" for AC activation)
+- **Zone sensor entities**: Zone sensors not yet created (sensor platform integration incomplete)
 - **Equalization mode**: Not yet implemented in logic.py (floor-to-floor delta balancing)
 - **Pre-cool / pre-heat**: Use basic forecast thresholds, no solar irradiance gating yet
 - **Fan pool UI**: Fan configuration stored as nested JSON in zone options; full UI pending
