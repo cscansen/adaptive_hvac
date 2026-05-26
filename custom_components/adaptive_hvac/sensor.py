@@ -22,7 +22,7 @@ async def async_setup_entry(
     entry_type = entry.data.get("entry_type")
 
     # Write debug log to file for visibility
-    with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+    with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
         f.write(f"[sensor.py] async_setup_entry called for {entry_type} entry {entry.entry_id}\n")
 
     _LOGGER.info(f"Setting up sensors for {entry_type} entry: {entry.entry_id}")
@@ -30,11 +30,11 @@ async def async_setup_entry(
     try:
         coordinator = hass.data[DOMAIN][entry.entry_id]
         _LOGGER.debug(f"Found coordinator in hass.data: {type(coordinator).__name__}")
-        with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+        with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
             f.write(f"  -> Coordinator found: {type(coordinator).__name__}\n")
     except KeyError as e:
         _LOGGER.error(f"Coordinator NOT found in hass.data[{DOMAIN}][{entry.entry_id}]")
-        with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+        with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
             f.write(f"  -> ERROR: Coordinator not in hass.data: {e}\n")
         return
 
@@ -42,7 +42,7 @@ async def async_setup_entry(
 
     if entry_type == ENTRY_TYPE_SYSTEM:
         _LOGGER.info("Creating system-level sensors")
-        with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+        with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
             f.write(f"  -> Creating system sensors\n")
         entities.append(SystemStatusSensor(coordinator))
         entities.append(SystemModeSensor(coordinator))
@@ -50,21 +50,21 @@ async def async_setup_entry(
     elif entry_type == ENTRY_TYPE_ZONE:
         zone_name = entry.data.get("zone_name", "Zone")
         _LOGGER.info(f"Creating zone sensors for {zone_name}")
-        with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+        with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
             f.write(f"  -> Creating zone sensors for {zone_name}\n")
         entities.append(ZoneStatusSensor(coordinator, zone_name))
         entities.append(ZoneTrendSensor(coordinator, zone_name))
     else:
         _LOGGER.warning(f"Unknown entry_type: {entry_type}")
-        with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+        with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
             f.write(f"  -> Unknown entry_type: {entry_type}\n")
         return
 
-    with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+    with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
         f.write(f"  -> Adding {len(entities)} entities\n")
     _LOGGER.info(f"Adding {len(entities)} entities for {entry.entry_id}")
     async_add_entities(entities)
-    with open("/tmp/adaptive_hvac_sensor_setup.log", "a") as f:
+    with open("/config/adaptive_hvac_sensor_setup.log", "a") as f:
         f.write(f"  -> Successfully added {len(entities)} entities\n")
     _LOGGER.info(f"Successfully added {len(entities)} entities")
 
