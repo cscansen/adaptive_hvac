@@ -55,11 +55,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Set up zone entry
             zone_name = entry.data.get("zone_name", "Zone")
             zone_config = {**entry.data, **entry.options}
+            _LOGGER.info(f"Setting up zone: {zone_name} (entry_id: {entry.entry_id})")
             coordinator = ZoneCoordinator(hass, zone_name, zone_config)
+            _LOGGER.debug(f"ZoneCoordinator created for {zone_name}")
             await coordinator.async_config_entry_first_refresh()
             hass.data[DOMAIN][entry.entry_id] = coordinator
+            _LOGGER.info(f"ZoneCoordinator {zone_name} stored in hass.data[{DOMAIN}][{entry.entry_id}]")
 
             # Forward to platforms
+            _LOGGER.info(f"Forwarding zone {zone_name} to sensor and switch platforms")
             await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
 
         entry.async_on_unload(entry.add_update_listener(async_reload_entry))

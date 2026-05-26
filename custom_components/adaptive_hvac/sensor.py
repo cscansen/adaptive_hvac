@@ -1,5 +1,6 @@
 """Sensors for Adaptive HVAC."""
 
+import logging
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -9,6 +10,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, ENTRY_TYPE_SYSTEM, ENTRY_TYPE_ZONE
 from .coordinator import ZoneCoordinator, SystemCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -16,20 +19,35 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up sensors."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    entry_type = entry.data.get("entry_type")
+    _LOGGER.info(f"Setting up sensors for {entry_type} entry: {entry.entry_id}")
+
+    try:
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        _LOGGER.debug(f"Found coordinator in hass.data: {type(coordinator).__name__}")
+    except KeyError:
+        _LOGGER.error(f"Coordinator NOT found in hass.data[{DOMAIN}][{entry.entry_id}]")
+        return
 
     entities = []
 
-    if entry.data.get("entry_type") == ENTRY_TYPE_SYSTEM:
+    if entry_type == ENTRY_TYPE_SYSTEM:
+        _LOGGER.info("Creating system-level sensors")
         entities.append(SystemStatusSensor(coordinator))
         entities.append(SystemModeSensor(coordinator))
         entities.append(SeasonSensor(coordinator))
-    elif entry.data.get("entry_type") == ENTRY_TYPE_ZONE:
+    elif entry_type == ENTRY_TYPE_ZONE:
         zone_name = entry.data.get("zone_name", "Zone")
+        _LOGGER.info(f"Creating zone sensors for {zone_name}")
         entities.append(ZoneStatusSensor(coordinator, zone_name))
         entities.append(ZoneTrendSensor(coordinator, zone_name))
+    else:
+        _LOGGER.warning(f"Unknown entry_type: {entry_type}")
+        return
 
+    _LOGGER.info(f"Adding {len(entities)} entities for {entry.entry_id}")
     async_add_entities(entities)
+    _LOGGER.info(f"Successfully added {len(entities)} entities")
 
 
 class SystemStatusSensor(CoordinatorEntity, SensorEntity):
