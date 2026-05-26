@@ -445,15 +445,19 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, entry: config_entries.ConfigEntry) -> None:
         self._entry = entry
-        self.system_data: Dict[str, Any] = {}
 
     async def async_step_init(self, user_input=None):
-        """Step 1: Thermostat & Weather."""
+        """Handle options for system entry."""
         if user_input is not None:
-            self.system_data = user_input
-            return await self.async_step_entities()
+            return self.async_create_entry(title="", data=user_input)
 
         defaults = {**self._entry.data, **self._entry.options}
+
+        # Normalize occupancy_entities to list
+        occ = defaults.get("occupancy_entities", [])
+        if isinstance(occ, str):
+            defaults["occupancy_entities"] = [occ] if occ else []
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
@@ -463,25 +467,6 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("weather_entity", default=defaults.get("weather_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
-            }),
-            description_placeholders={"step_title": "Step 1/3: Thermostat & Weather"},
-        )
-
-    async def async_step_entities(self, user_input=None):
-        """Step 2: House-level sensors."""
-        if user_input is not None:
-            self.system_data.update(user_input)
-            return await self.async_step_thresholds()
-
-        defaults = {**self._entry.data, **self._entry.options}
-        # Normalize occupancy_entities to list
-        occ = defaults.get("occupancy_entities", [])
-        if isinstance(occ, str):
-            defaults["occupancy_entities"] = [occ] if occ else []
-
-        return self.async_show_form(
-            step_id="entities",
-            data_schema=vol.Schema({
                 vol.Optional("windows_assumed_open_sensor", default=defaults.get("windows_assumed_open_sensor", "binary_sensor.windows_assumed_open")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="binary_sensor")
                 ),
@@ -494,20 +479,6 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("solar_entity", default=defaults.get("solar_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-            }),
-            description_placeholders={"step_title": "Step 2/3: House-Level Sensors (Optional)"},
-        )
-
-    async def async_step_thresholds(self, user_input=None):
-        """Step 3: Temperature thresholds and settings."""
-        if user_input is not None:
-            self.system_data.update(user_input)
-            return self.async_create_entry(title="", data=self.system_data)
-
-        defaults = {**self._entry.data, **self._entry.options}
-        return self.async_show_form(
-            step_id="thresholds",
-            data_schema=vol.Schema({
                 vol.Optional("ac_setpoint", default=defaults.get("ac_setpoint", 68.0)): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=60, max=78, step=1, unit_of_measurement="°F")
                 ),
@@ -542,7 +513,6 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                     selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%")
                 ),
             }),
-            description_placeholders={"step_title": "Step 3/3: Thresholds & Settings"},
         )
 
 
