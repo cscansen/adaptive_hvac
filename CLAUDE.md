@@ -429,6 +429,44 @@ Correct workflow:
 
 **CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
 
+### Next Steps for Adaptive HVAC (v0.2.19+)
+
+**Priority 1 — Fix Primary Zone Selection Logic**
+- [ ] Investigate why Tia's Office (idle, urgency=0) is selected as primary over Caleb's Office (emergency, urgency=5)
+- [ ] Verify occupancy-based primary zone selection in `decide_system()` (logic.py)
+- [ ] Test with occupied vs unoccupied zone scenarios
+- [ ] Expected: highest-urgency zone should drive AC activation when both occupied
+
+**Priority 2 — Complete Zone Sensor Platform**
+- [ ] Create zone sensor entities (`sensor.adaptive_hvac_{zone_slug}_status`, `sensor.adaptive_hvac_{zone_slug}_trend`)
+- [ ] Zone sensors should show real-time zone status and temperature trend
+- [ ] Currently zone state is only visible in system status text; separate entities aid diagnostics
+
+**Priority 3 — A/B Testing Against Old YAML Automations**
+- [ ] Run integration and old automations in parallel
+- [ ] Compare decisions: same thermostat mode, setpoint, and fan speeds?
+- [ ] Log both to dashboards for side-by-side comparison
+- [ ] Run for 7+ days to verify behavior across different thermal conditions
+- [ ] Once matched, disable old automations and switch to integration-only
+
+**Priority 4 — Feature Testing Checklist**
+- [ ] **Window override**: Open window → AC off, whole-house fan on, stay off until close
+- [ ] **Sleep mode blocking**: Sleep posture ON → no heat, stays off until sleep posture OFF
+- [ ] **Occupancy setback**: 8h unoccupied → cool to 76°F, heat to 62°F; return home → restore
+- [ ] **Fan lock respect**: User-claimed fans not overridden by zone/system decisions
+- [ ] **Humidity passive cooling**: High humidity + warm temp → passive fan mode (no AC)
+- [ ] **Season transitions**: Verify auto-detect and manual override work correctly
+
+**Priority 5 — Dashboard & Visibility**
+- [ ] Build Lovelace dashboard for `dashboard-hvac` with zone cards
+- [ ] Show: zone temp/trend/mode, system decision, thermostat setpoint, active zone selection
+- [ ] Add service call buttons for `force_evaluate` and manual override toggle
+
+**Testing Tools**
+- `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'` — trigger immediate evaluation
+- `/config/adaptive_hvac_coordinator.log` — detailed aggregation logs (zone refresh, decision collection, system decision)
+- `sensor.adaptive_hvac_status` → reasoning attribute — shows decision tree and logic path
+
 ## Notes
 - Still learning HA — update this file as patterns emerge
 - Automations created via API use string IDs (not UUIDs) — choose descriptive IDs
