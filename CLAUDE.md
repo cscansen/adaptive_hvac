@@ -468,7 +468,34 @@ Correct workflow:
 
 **CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
 
-### Next Steps for Adaptive HVAC (v0.2.19+)
+### v0.2.19: System-Level AC/Heat Gating (Planned)
+
+**Architecture Change:**
+Move AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather.
+
+**Implementation:**
+- **Zone roles simplified:** Each zone controls local fans + makes local decisions. Zones do NOT gate system AC/heat.
+- **System-level gating:** Uses `sensor.upstairs_average_temperature` + exterior weather from `weather.forecast_home`
+- **Season-aware thresholds:**
+  ```
+  SUMMER (May-Sept): AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
+  WINTER (Oct-April): Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
+  SHOULDER/OTHER: System OFF (fans/passive only, no thermostat)
+  ```
+- **Fallback:** If thresholds not met, system does nothing (thermostat OFF, fans available for manual use)
+
+**Benefits:**
+- No fighting with weather (e.g., won't AC when outside is cool)
+- Prevents unnecessary heating when it's warm out
+- Cleaner zone model (zones = fan/local control only)
+- True system-wide thermal decision based on aggregate signal
+
+**Related entities:**
+- `sensor.upstairs_average_temperature` — aggregated interior signal (already created)
+- `weather.forecast_home` — exterior conditions (already available)
+- System config: threshold temps, season dates
+
+### Next Steps for Adaptive HVAC (v0.2.20+)
 
 **Priority 1 — Fix Primary Zone Selection Logic**
 - [ ] Investigate why Tia's Office (idle, urgency=0) is selected as primary over Caleb's Office (emergency, urgency=5)
