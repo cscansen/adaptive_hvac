@@ -164,9 +164,9 @@ def decide_zone(
             reasoning=reasoning,
         )
 
-    # Below heat threshold in winter: request heat (no fan for heating)
-    if sys_state.season == "winter" and zone.temp <= sys_cfg.heat_threshold:
-        reasoning.append(f"Winter: temp {zone.temp:.1f}°F ≤ heat threshold {sys_cfg.heat_threshold:.1f}°F")
+    # Below heat threshold: request heat (season filtering happens in decide_system)
+    if zone.temp <= sys_cfg.heat_threshold:
+        reasoning.append(f"Temp {zone.temp:.1f}°F ≤ heat threshold {sys_cfg.heat_threshold:.1f}°F")
         return ZoneDecision(
             mode="heating",
             zone_name=zone.zone_name,

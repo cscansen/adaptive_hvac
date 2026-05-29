@@ -307,11 +307,7 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         if self._config_entry:
             new_options = {**self._config_entry.options, key: new_setpoint}
-            self.hass.async_create_task(
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, options=new_options
-                )
-            )
+            self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
 
     def _read_outdoor_temp(self) -> float:
         """Read current outdoor temperature from weather entity."""
@@ -369,11 +365,7 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         if new_options != self._config_entry.options:
             _LOGGER.info(f"Season changed to {new_season} — resetting {keys_to_reset} to config defaults")
-            self.hass.async_create_task(
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, options=new_options
-                )
-            )
+            self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
             # Also update in-memory value
             for key in keys_to_reset:
                 base = self._config_entry.data.get(key, DEFAULT_AC_SETPOINT if key == "ac_setpoint" else DEFAULT_HEAT_SETPOINT)
