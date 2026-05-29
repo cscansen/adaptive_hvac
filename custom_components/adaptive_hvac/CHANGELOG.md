@@ -4,6 +4,36 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.0] - 2026-05-29
+
+### Breaking Changes
+- Requires fresh setup (remove old integration entries and reconfigure)
+- Zone config keys changed: `comfort_upper`, `passive_threshold`, `escalate_threshold` replaced by `zone_target_temp`
+- System config keys removed: `cool_interior_threshold`, `upstairs_average_temp_entity`, `summer_threshold`, `winter_threshold`, `precool_trigger`, `preheat_trigger`, `escalate_enabled_downstairs_temp`, `escalate_enabled_upstairs_temp`
+
+### Fixed
+- **AC kept turning off when hot** — exterior threshold (70°F) was too high for spring solar-gain days; lowered default to 60°F and added interior override so AC is always allowed when a zone is 5°F+ above its target regardless of exterior temp
+- **Sleep posture caused heat request in summer** — `setback_night` mode no longer exists; sleep posture flag is read but does not affect fan or thermostat decisions
+- **Dual season systems conflicting** — removed forecast-based season detection (`derive_season`, `season.py`); calendar-based season is the single authority
+- **Equalization check blocked AC when downstairs was cool** — removed `escalate_enabled_downstairs/upstairs_temp` gating from `decide_system`
+- **Debug log files cluttering /config/** — all `/config/adaptive_hvac_*.log` writes removed
+
+### Changed
+- **Simplified zone logic** — single `zone_target_temp` replaces 4-tier threshold chain; fans on when temp > target, fans off when ≤ target
+- **User owns thermostat** — if user adjusts setpoint via faceplate or app, integration adopts it as the new `ac_setpoint`/`heat_setpoint` for the season and persists it to config entry options; resets to base config on season change
+- **Season model** — summer/winter only (no shoulder); configured as winter start/end months
+- **Exterior gating** — `cool_exterior_threshold` default lowered 70→60°F; new `cool_interior_override_delta` (default 5°F) bypasses exterior gate when zone is significantly hot
+- **Config flow simplified** — system: 4 steps instead of 7; zone: single target temp + fan speed
+
+### Removed
+- `season.py` — forecast-based season derivation deleted
+- Pre-cool and pre-heat modes
+- Equalization mode
+- Passive/humidity cooling tiers
+- Solar trigger logic
+- All debug file writes
+- 13 number entities reduced to 5 (AC setpoint, heat setpoint, heat threshold, emergency cool, emergency heat)
+
 ## [0.2.19] - 2026-05-26
 
 ### Changed
