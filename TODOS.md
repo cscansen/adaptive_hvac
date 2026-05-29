@@ -85,3 +85,17 @@ Button card added to irrigation dashboard (`dashboard-irrigation`) via websocket
 ## Garage Apple TV — Entity Rename — DONE
 
 `media_player.garage_apple_tv` rename confirmed complete by user.
+
+---
+
+## Adaptive HVAC v0.3.3 — Pending
+
+### Cleanup
+- [ ] Clean up stale `switch.adaptive_hvac_calebs_office_auto` (no `_2`) entity registry entry — orphaned, safe to delete via Settings → Entities
+- [ ] Rename `binary_sensor.windows_assumed_open_2` → `windows_assumed_open` in entity registry now that the old broken one is deleted
+
+### Deferred features (parking lot)
+- [ ] **Occupancy setback** — away 8h+ → cool to 76°F / heat to 62°F; parked from v0.3.0, low priority
+- [ ] **Fan lock integration** — zone coordinator reads `fan_config` entries with `fan_lock_entity` flags; verify fan lock automations (`fan_lock_set_claimed`, etc.) still work with v0.3.x fan dispatch
+- [ ] **Winter heating test** — verify heat gating works when outdoor drops below 60°F; season override select can force "winter" for testing
+- [ ] **Zone performance analyzer** — diagnostic tool for reviewing per-zone thermal trends; see `memory/zone_performance_analyzer_plan.md`
