@@ -4,6 +4,12 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.2] - 2026-05-29
+
+### Changed
+- Zone occupancy now controls **local fans only** — if a zone is unoccupied, its ceiling fans are turned off, but the zone still issues a thermal request to the system thermostat. Thermostat and whole-house fan decisions are never affected by zone occupancy.
+- **Warning:** do not add the whole-house fan (thermostat fan) as a zone fan entity — occupancy would incorrectly turn it off.
+
 ## [0.3.1] - 2026-05-29
 
 ### Fixed

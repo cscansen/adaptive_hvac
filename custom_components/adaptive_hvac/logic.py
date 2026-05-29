@@ -150,10 +150,17 @@ def decide_zone(
             reasoning=reasoning,
         )
 
-    # Above zone target: fan on, request cooling
+    # Above zone target: request cooling always; local fan only if occupied
     if zone.temp > cfg.zone_target_temp:
         reasoning.append(f"Temp {zone.temp:.1f}°F > target {cfg.zone_target_temp:.1f}°F")
-        fan_cmds = {} if zone.fans_claimed else {zone.zone_name: cfg.fan_speed}
+        if zone.fans_claimed:
+            fan_cmds = {}
+            reasoning.append("Fan claimed by user — not touching")
+        elif zone.zone_occupied:
+            fan_cmds = {zone.zone_name: cfg.fan_speed}
+        else:
+            fan_cmds = {zone.zone_name: 0}
+            reasoning.append("Zone unoccupied — fan off (thermostat request still active)")
         return ZoneDecision(
             mode="cooling",
             zone_name=zone.zone_name,
