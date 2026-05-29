@@ -7,14 +7,12 @@
 - MCP server: http://ha.iot.scansenconsulting.com:8123/mcp_server/sse
 
 ## API Usage
-- Get all states: curl -s http://ha.iot.scansenconsulting.com:8123/api/states -H "Authorization: Bearer $HA_TOKEN"
-- Get single entity: curl -s http://ha.iot.scansenconsulting.com:8123/api/states/<entity_id> -H "Authorization: Bearer $HA_TOKEN"
-- Call service: curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/<domain>/<service> -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{"entity_id": "<entity_id>"}'
-
-## API Usage — Additional
-- Get automation definition: curl -s http://ha.iot.scansenconsulting.com:8123/api/config/automation/config/<id> -H "Authorization: Bearer $HA_TOKEN"
-- Create/update automation: curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/config/automation/config/<id> -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d @file.json
-- Reload automations: curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/automation/reload -H "Authorization: Bearer $HA_TOKEN"
+- Get all states: `curl -s http://ha.iot.scansenconsulting.com:8123/api/states -H "Authorization: Bearer $HA_TOKEN"`
+- Get single entity: `curl -s http://ha.iot.scansenconsulting.com:8123/api/states/<entity_id> -H "Authorization: Bearer $HA_TOKEN"`
+- Call service: `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/<domain>/<service> -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{"entity_id": "<entity_id>"}'`
+- Get automation: `curl -s http://ha.iot.scansenconsulting.com:8123/api/config/automation/config/<id> -H "Authorization: Bearer $HA_TOKEN"`
+- Create/update automation: `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/config/automation/config/<id> -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d @file.json`
+- Reload automations: `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/automation/reload -H "Authorization: Bearer $HA_TOKEN"`
 
 ## Local Files
 - automations.json — exported automation states (refresh as needed)
@@ -142,461 +140,68 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ## Irrigation System
 
-The active irrigation system is the **`adaptive_irrigation` custom HACS integration** (v0.6.9+), not the old HA automation-based programs. Source: `/mnt/nas/ai-workspace/homeassistant/adaptive_irrigation/`.
+**Adaptive Irrigation v0.6.9+** — custom HACS integration for data-driven watering decisions.
 
-### Config entries
-- **Configuration** entry (`entry_type: system`) — weather entity, watering window, water meter, daily budget. Has its own Configure button in Settings → Integrations.
-- One **zone** entry per zone (`entry_type: zone`).
+**Quick reference:**
+- 5 zones (Yard East, Middle, West; Front; Drip) with soil moisture sensing
+- Per-zone thresholds, max duration, flow rate (all configurable via UI)
+- Seedling mode auto-expires after 30 days
+- Daily watering window (5:30 AM – 10:00 AM default) + daily gallon budget
+- Services: `adaptive_irrigation.water_zone`, `adaptive_irrigation.evaluate_now`
 
-### Zones
-| Zone | Valve switch | Soil sensor | Motion sensor |
-|------|-------------|-------------|---------------|
-| Yard East | `switch.yardian_controller_yard_east` | `sensor.east_yard_soil_sensor_humidity` | `binary_sensor.yard_east_motion` |
-| Yard Middle | `switch.yardian_controller_yard_middle` | avg(east + west) | `binary_sensor.yard_gazebo_slider_motion` |
-| Yard West | `switch.yardian_controller_yard_west` | `sensor.back_yard_soil_sensor_humidity` | `binary_sensor.yard_west_motion` |
-| Front Yard | `switch.yardian_controller_front_yard` | `sensor.front_yard_soil_sensor_humidity` | — |
-| Drip Zone | `switch.yardian_controller_drip` | — (sensor-free, peer trend) | — |
-
-**Soil sensor calibration (Third Reality, 2026-05-17):** Accurate within ~10% across full range. Currently reading 97–99% (saturated post-watering). Thresholds: normal 25%, seedling 35%.
-
-### Per-zone entities
-| Entity pattern | Description |
-|---------------|-------------|
-| `sensor.*_status` | Current decision: watering / skipped / idle / paused |
-| `sensor.*_moisture` | Live soil moisture % |
-| `sensor.*_moisture_trend` | %/hr trend (linear regression over 6h) |
-| `sensor.*_last_watered` | Timestamp of last valve close |
-| `sensor.*_et_today` | Evapotranspiration today |
-| `sensor.*_rain_forecast` | Forecast precip (inches) |
-| `sensor.*_wind_forecast` | Forecast wind (mph) |
-| `switch.*_auto_watering` | Enable/disable automated watering for zone |
-| `switch.*_seedling_mode` | Seedling mode toggle — uses seedling threshold instead of normal |
-| `number.*_soil_threshold` | Moisture % below which normal watering triggers (10–99%, default 25%) |
-| `number.*_seedling_threshold` | Moisture % below which seedling-mode watering triggers (10–99%, default 35%) |
-| `number.*_max_duration` | Max watering duration cap (minutes) |
-| `number.*_flow_rate` | Gallons/min for budget tracking |
-| `number.*_water_interval` | Base watering interval for sensor-free zones (days) |
-| `datetime.*_seedling_expires` | Auto-set 30 days after seedling mode first activates; expires mode automatically |
-
-### System entities (Configuration device)
-- `switch.adaptive_irrigation` — System Active (master pause)
-- `switch.adaptive_irrigation_water_restriction` — block all zones (drought/HOA)
-- `select.configuration_watering_window_start` / `_end` — daily watering window (AM/PM time labels)
-- `number.adaptive_irrigation_daily_water_budget` — daily gallon cap (0 = unlimited)
-- `sensor.adaptive_irrigation_daily_water_used` — gallons used today
-- `sensor.configuration_weather_source` — which weather entity is active
-
-### Seedling mode behavior
-- When on: uses `seedling_threshold` (default 35%) instead of `soil_threshold` (default 25%)
-- All zones use the same configurable watering window (no separate time gates)
-- `seedling_expires` auto-sets to now+30 days on first poll after mode activates; editable from dashboard
-- When expiry passes: mode is turned off automatically + dashboard notification posted
-
-### Services
-- `adaptive_irrigation.water_zone` — `zone_id` (e.g. "Yard East"), `duration_minutes`
-- `adaptive_irrigation.evaluate_now` — `zone_id` — force immediate decision cycle
-- Zone ID accepts both "Yard East" and "yard_east" forms
-
-### Poll cycle
-15 minutes. Startup guard skips watering decisions on first poll; real decisions begin on second poll (~15 min after HA start). Use `evaluate_now` to force immediately.
+**For complete configuration and troubleshooting:** See `docs/adaptive_irrigation.md`
 
 ## HVAC System
 
+**Adaptive HVAC v0.3.3** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
+
+### Architecture
+- **System entry** — owns the thermostat, reads weather, dispatches heat/cool/off
+- **Zone entries** — one per room; each reads temp sensors, controls local fans, emits thermal requests
+- **Season** — calendar-based only (Oct–Apr = winter, May–Sept = summer); override via `select.adaptive_hvac_season_override`
+
+### Decision logic
+- Zone: if `temp > zone_target_temp` → fan on (occupied only) + request cool; if `temp ≤ zone_target_temp` → fan off
+- System: cooling allowed if `outdoor ≥ cool_exterior_threshold` (60°F) OR any zone is 5°F+ above its target; heat allowed if `outdoor ≤ heat_exterior_threshold` (60°F)
+- Occupancy gates **local fans only** — thermostat decisions are never blocked by occupancy
+- User thermostat adjustments (faceplate/app) are adopted as the new seasonal setpoint and persisted to config entry options; reset on season change
+
+### Zones (v0.3.3)
+| Zone | Status sensor | Temp sensor | Auto switch |
+|------|--------------|-------------|-------------|
+| Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` |
+| Tia's Office | `sensor.tias_office_hvac_status` | `sensor.tias_office_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` |
+| Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.meter_pro_2689_temperature` | `switch.adaptive_hvac_master_bedroom_auto` |
+| Garage | `sensor.garage_hvac_status` | `sensor.garage_hygrometer_temperature` | `switch.adaptive_hvac_garage_auto` |
+
 ### Key entities
-| Entity | Role |
-|--------|------|
-| `climate.downstairs_thermostat` | Single thermostat — controls whole house heat/cool/fan |
-| `sensor.caleb_s_office_hygrometer_temperature` | **Primary sensor** — gates all automations; office is hottest/coldest room |
-| `sensor.caleb_s_office_hygrometer_humidity` | Used for passive_humid trigger (>55% at ≥70°F) |
-| `sensor.downstairs_thermostat_temperature` | Floor-level temp — emergency heat trigger |
-| `sensor.meter_pro_2689_temperature` | Master bedroom temp — co-trigger for heat and passive cooling |
-| `sensor.meter_pro_2689_humidity` | Master bedroom humidity |
-| `input_select.hvac_season` | `summer` / `shoulder` / `winter` — set manually or by `hvac_season_transition` |
-| `binary_sensor.windows_assumed_open` | Drives passive cooling mode; blocks heat in summer |
-| `input_boolean.hvac_manual_override` | Blocks all HVAC automations when on |
-| `input_boolean.hvac_managed_heating` | Tracks whether automation activated heat (for morning restore) |
+- Thermostat: `climate.downstairs_thermostat`
+- System status: `sensor.adaptive_hvac_status` (state = status string, `reasoning` attribute = full decision tree)
+- Season: `sensor.adaptive_hvac_season`
+- Mode: `sensor.adaptive_hvac_mode`
+- Windows (informational only, does NOT block AC): `binary_sensor.windows_assumed_open_2` — on when outdoor 58–68°F
+- Active switch: `switch.adaptive_hvac_active`
+- Manual override: `switch.adaptive_hvac_manual_override`
+- Upstairs average: `sensor.upstairs_average_temperature` (Caleb + Tia + Master avg, in `templates.yaml`)
 
-### Season schedule (auto via `hvac_season_transition`, 00:01 on 1st)
-- **May 1** → summer: thermostat off, fan auto, passive cooling active
-- **Oct 1** → winter: thermostat heat at 68°F
-- **Apr 1** → shoulder: thermostat off, passive only — no normal heat (emergency only)
-
-### Cooling thresholds (summer, windows closed)
-| Condition | Action |
-|-----------|--------|
-| Office < 70°F for 5min | Comfortable: fans off (unless master bedroom > 70°F → fans at 25%) |
-| Office > 71.9°F for 2min OR master bedroom > 71.9°F for 5min | Passive: fans at 33%, whole house fan on |
-| Office ≥ 70°F + humidity > 55% for 2min | Passive humid: same as passive |
-| Office ≥ 74°F + solar > 2kW + 10am–3pm | Escalate solar: fans 50%, AC at 68°F |
-| Office > 73.9°F for 30min | Escalate standard: fans 50%, AC at 68°F |
-| Office > 77.9°F | Emergency: fans 100%, AC at 68°F |
-
-### Windows open behavior (summer only)
-- Open → thermostat off, whole house fan on, office fans at 25%
-- Close → whole house fan reset to auto (thermostat stays off until temp triggers re-engage)
-
-### Heating thresholds
-| Trigger | Season | Action |
-|---------|--------|--------|
-| Downstairs < 68°F for 5min | winter | Heat at 68°F |
-| Office < 65°F for 5min | winter | Heat at 68°F |
-| Master bedroom < 65°F for 5min | winter | Heat at 68°F |
-| Downstairs < 55°F | any | Emergency heat at 68°F |
-| Office < 50°F | any | Emergency heat at 68°F |
-| Master bedroom < 45°F | any | Emergency heat at 68°F |
-
-Emergency heat blocked when: summer + windows open. In summer (windows closed), heat only fires when at least one sensor is below 45°F. Normal heat blocked during sleep posture.
-
-### Setbacks
-- **Unoccupied 8h**: cool → 76°F, heat → 62°F
-- **Return home**: heat mode → restore 68°F; cool mode → restore 74°F
-- **Winter 6am**: restore heat setpoint to 68°F, clear managed_heating flag
-
-### Whole house fan
-Thermostat `fan_mode`: `on` = continuous circulation, `auto` = only when HVAC cycles. Controlled on HVAC dashboard (`dashboard-hvac`). Automation sets it to `on` when windows open or passive cooling active; back to `auto` when comfortable.
-
-### Sensor failsafe
-`hvac_sensor_failsafe` monitors office sensor (gates automations) and master bedroom sensor (advisory). On office sensor recovery, re-triggers cooling or heating automation if conditions warrant.
-
-## Adaptive HVAC Integration
-
-The **`adaptive_hvac` custom HACS integration** (v0.2.19, **system-level AC/heat gating with season+weather awareness**) replaces the old automation-based HVAC system with a pure, extensible decision engine. No Home Assistant imports in logic layer — easy to test, reason about, and extend independently. Source: `/mnt/nas/ai-workspace/homeassistant/custom_components/adaptive_hvac/`.
-
-**Status (2026-05-26)**: v0.2.19 system-level AC/heat gating fully implemented and tested. SystemCoordinator now:
-- Reads aggregated upstairs temperature (`sensor.upstairs_average_temperature`)
-- Reads exterior weather from `weather.forecast_home`
-- Determines calendar season (Oct-April = winter, May-Sept = summer)
-- Gates AC/heat activation: Summer AC allowed if exterior ≥70°F AND upstairs ≥74°F; Winter heat allowed if exterior ≤60°F AND upstairs ≤68°F
-- Blocks thermostat commands via `_dispatch_thermostat()` before sending to HA if gating thresholds not met
-- Zones now simply: control local fans + make local decisions; system applies gating at dispatch time
-
-### Upstairs Average Temperature Sensor
-**Entity:** `sensor.upstairs_average_temperature` (in `templates.yaml`)
-
-Averages three temperature sensors to create a representative "whole upstairs" thermal input for primary zone decision-making:
-- **Caleb's Office** (`sensor.caleb_s_office_hygrometer_temperature`)
-- **Tia's Office** (`sensor.tias_office_hygrometer_temperature`)
-- **Master Bedroom** (`sensor.meter_pro_2689_temperature`) — included to bring average down (more AC air piped there)
-
-**Why this works:** Master bedroom's cooler temperature (due to AC circulation) moderates the upstairs average, preventing the system from over-cooling based on office sensors alone.
-
-### Why This Exists
-The original automation-based HVAC system (v0.1.0, still deployed) uses 13 YAML automations with hardcoded entity IDs, making it inflexible and hard to reuse. This integration:
-- **Removes hardcoded entity IDs** — fully configurable via UI
-- **Enables per-room thermal autonomy** — any room can demand fans; occupancy determines AC gating
-- **Adds system-wide window logic** — any window open blocks AC/heat, enables passive ventilation
-- **Respects user fan claims** — integrates with existing fan lock system
-- **Is reusable** — zero HA-specific code in decision logic; works on any Python system
-
-### Architecture (v0.2.19)
-- **ZoneCoordinator**: Evaluates each room independently (temp averaging, humidity, window state, occupancy) → outputs local fan commands + thermal requests
-- **SystemCoordinator**: Discovers + aggregates zone decisions, applies system-level gating (season + weather + interior aggregate), controls thermostat & whole-house fan
-- **System-Level Gating (v0.2.19)**: `_check_system_level_gating()` determines if AC/heat activation is allowed based on:
-  - Calendar season detection (Oct-April vs May-Sept)
-  - Exterior temperature from `weather.forecast_home`
-  - Interior aggregate temp from `sensor.upstairs_average_temperature`
-  - Configurable thresholds (default: summer 70°F/74°F, winter 60°F/68°F)
-- **Dispatch Override**: `_dispatch_thermostat()` applies gating before sending commands — blocks AC/heat if thresholds not met
-- **Logic Engine**: Pure decision trees (no HA imports) — used by both integration and unit tests
-- **Three-Layer Fan Control**: zone auto-control switch → per-fan user claim lock → per-mode speed control
-
-### Config entries
-- **System** entry (`entry_type: system`) — thermostat, weather, solar, AC settings, heating thresholds, setback temps, windows sensor, passive cooling toggle
-- One **zone** entry per zone (`entry_type: zone`)
-
-### System Configuration
-
-#### Core Entities & Sensors
-| Config | Entity/Default | Role |
-|--------|---|---|
-| Thermostat | `climate.downstairs_thermostat` | Controls mode/setpoint/fan |
-| Weather | `weather.forecast_home` | Forecast high/low for pre-cool/pre-heat |
-| Solar | `sensor.solcast_pv_estimate_now` (optional) | Trigger AC escalation on high irradiance |
-| Sleep posture | `input_boolean.master_suite_sleep_posture` | Block heating during sleep |
-| Occupancy sensors | `binary_sensor.house_occupied` (optional) | Track unoccupied duration for setback |
-
-#### AC/Heat Control
-| Config | Default | Role |
-|--------|---------|------|
-| `ac_setpoint` | 68°F | AC target temperature |
-| `heat_setpoint` | 68°F | Heat target temperature |
-| `heat_threshold` | 68°F | Zone temp trigger for normal heating |
-| `emergency_heat_threshold` | 55°F | Emergency heat trigger (any zone) |
-
-#### Away Mode Setback
-| Config | Default | Role |
-|--------|---------|------|
-| `setback_cool_temp` | 76°F | Cool setpoint when unoccupied 8+ hours |
-| `setback_heat_temp` | 62°F | Heat setpoint when unoccupied 8+ hours |
-
-#### Windows & Passive Cooling
-| Config | Default | Role |
-|--------|---------|------|
-| `windows_assumed_open_sensor` | `binary_sensor.windows_assumed_open` | Passive mode trigger (any window open) |
-| `window_fan_speed` | 25% | Fan speed for window-open passive mode |
-| `passive_fan_threshold` | 70°F | Hottest zone temp that triggers whole-house fan |
-
-#### System-Level AC/Heat Gating (v0.2.19)
-| Config | Default | Role |
-|--------|---------|------|
-| `winter_start_month` | 10 (Oct) | Month when winter season begins |
-| `winter_end_month` | 4 (Apr) | Month when winter season ends |
-| `summer_start_month` | 5 (May) | Month when summer season begins |
-| `summer_end_month` | 9 (Sep) | Month when summer season ends |
-| `cool_exterior_threshold` | 70°F | Don't AC if outdoor temp below this |
-| `cool_interior_threshold` | 74°F | Don't AC if upstairs avg below this |
-| `heat_exterior_threshold` | 60°F | Don't heat if outdoor temp above this |
-| `heat_interior_threshold` | 68°F | Don't heat if upstairs avg above this |
-
-**Gating Logic:**
-- **Summer**: AC allowed if (month in May-Sept) AND (exterior ≥ cool_exterior_threshold) AND (upstairs_avg ≥ cool_interior_threshold)
-- **Winter**: Heat allowed if (month in Oct-April) AND (exterior ≤ heat_exterior_threshold) AND (upstairs_avg ≤ heat_interior_threshold)
-- **Shoulder**: System OFF (fans available for zone/manual control only)
-
-**UI Configuration:** Settings → Integrations → Adaptive HVAC → Configure → Step 3e (Season dates with month dropdowns, thresholds with sliders)
-
-### Zone Configuration
-| Config | Default | Role |
-|--------|---------|------|
-| Zone name | — | Identifier (creates `switch.adaptive_hvac_{zone}_auto`) |
-| Primary zone | `false` | Only primary zone can activate system AC |
-| Auto-control toggle | `true` | If false, zone operates user-only (no auto fan commands) |
-| Temp sensors | — | Averaged for zone decision logic (required) |
-| Humidity sensor | — | Optional; triggers passive cooling if high |
-| Window sensor | — | Per-zone window override (optional; system windows sensor also checked) |
-| Occupancy sensor | — | Optional; drives per-zone setback logic |
-| **Cooling thresholds** | comfort=70°F, passive=72°F, escalate=74°F, emergency=78°F | Temperature decision tree |
-| **Humidity trigger** | 55% at ≥72°F | Passive mode trigger (high humidity path) |
-| **Per-mode fan speeds** | comfort=0%, passive=33%, escalate=50%, emergency=100% | Zone fan control (null = skip, 0 = off, 1-100 = %) |
-
-### Recommended Zone Setup (Multi-Zone Primary Strategy)
-
-**Upstairs Main** (primary zone — gates AC activation)
-- **Temp sensors:** `sensor.upstairs_average_temperature` (averaged Caleb + Tia + Master)
-- **Fans:** (none — no fan control for this zone)
-- **Primary zone:** `true` ✓
-- **Auto-control:** ON
-- **Purpose:** Represents whole-upstairs thermal state; only this zone's cool/heat request activates thermostat
-
-**Caleb's Office** (secondary zone — controls own fans)
-- **Temp sensors:** `sensor.caleb_s_office_hygrometer_temperature`
-- **Fans:** `fan.caleb_office_ceiling`
-- **Primary zone:** `false`
-- **Auto-control toggle:** `switch.adaptive_hvac_caleb_s_office_auto` (ON = auto fans, OFF = user-only)
-- **Purpose:** Thermal autonomy; fans respond to office temp/humidity independently
-
-**Tia's Office** (secondary zone — controls own fans)
-- **Temp sensors:** `sensor.tias_office_hygrometer_temperature`
-- **Fans:** `fan.tia_office_ceiling_fan`
-- **Primary zone:** `false`
-- **Auto-control toggle:** `switch.adaptive_hvac_tias_office_auto`
-- **Purpose:** Thermal autonomy; fans respond to office temp/humidity independently
-
-**Downstairs** (monitoring only — optional)
-- **Temp sensors:** `sensor.downstairs_thermostat_temperature`
-- **Fans:** (none)
-- **Primary zone:** `false`
-- **Purpose:** Setback and emergency-heat monitoring only; thermostat location (cooler due to AC output)
-
-### Per-zone entities
-| Entity | Description |
-|--------|-------------|
-| `sensor.adaptive_hvac_{zone}_status` | Current mode + reasoning |
-| `sensor.adaptive_hvac_{zone}_trend` | Temperature trend °F/hr (30-min window) |
-| `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle (ON = auto, OFF = user-only) |
-
-### Cooling decision tree (summer, windows closed)
-1. **Comfort** (< 70°F) — fans off
-2. **Passive** (≥ 72°F OR humidity ≥ 55% at ≥ 72°F) — fans at passive_speed
-3. **Window mode** (system windows open, ≥ 72°F) — fans at window_speed, thermostat OFF
-4. **Escalate** (≥ 74°F for 30min OR trend > 1.5°F/h) — fans 50%, AC at 68°F
-5. **Emergency** (≥ 78°F) — fans 100%, AC at 68°F
-
-### Zone Discovery & Registration (v0.2.10+)
-- **Auto-discovery**: At startup, system coordinator discovers all zone coordinators from `hass.data[DOMAIN]`
-- **Dynamic zone list**: No need to explicitly register zones — any zone config entry is automatically included
-- **Aggregate zone states**: Collects temp, humidity, window, occupancy from each zone for system-level decisions
-
-### Dynamic Primary Zone Gating (v0.2.10+)
-Primary zone selection is **dynamic**, not static, based on **occupancy + sleep mode**:
-
-1. **Compute active zones**:
-   - Any zone with `zone_occupied=True` is "active"
-   - Master bedroom is always active during `sleep_posture=ON` (so sleeper can demand cooling if master is hot)
-   - If no occupied zones and not sleeping → all zones contribute equally (system responsive to any demand)
-
-2. **Select primary among active zones**:
-   - If configured primary zone is active → use it (explicit config wins)
-   - Otherwise → pick highest-urgency active zone (prevents thermal runaway)
-   - Fallback → no active zones = system OFF
-
-3. **Apply gating**: Only primary zone's cool request gates thermostat AC setpoint
-   - Secondary/non-primary zones still generate fan commands (fans can run without AC)
-   - Enables "Tia's office manual only" + "Caleb's office drives AC" pattern without hardcoding
-
-**Example**: At 2pm, Caleb's office occupied 75°F + Tia's office unoccupied 68°F → Caleb is primary → AC activates. At 11pm, both empty, master bedroom 78°F + sleep mode ON → master is primary → AC activates.
-
-### Auto-control switch pattern
-Per-zone: `switch.adaptive_hvac_{zone_slug}_auto`
-- **ON** (default): integration actively controls zone fans per temperature/humidity/windows
-- **OFF**: integration suppresses all fan commands; zone operates in user-only mode (e.g., Tia's office)
-- Persists across HA restarts (RestoreEntity)
-- Can be toggled from dashboard or automations
-
-### System-Wide Window Override (v0.2.10+)
-**If ANY window is open, AC/heat is blocked** — checked at dispatch time, overrides decision logic.
-
-- **System windows sensor**: `binary_sensor.windows_assumed_open` (aggregates system-wide open windows)
-- **Per-zone windows**: Each zone can have its own contact sensor (window monitor)
-- **Aggregation**: Coordinator checks ALL windows (system + all zones)
-- **If any open** → thermostat OFF, whole-house fan ON (passive ventilation only)
-- **If closed** → normal HVAC logic resumes
-
-**Use case**: Opened bedroom window at night → system immediately disables heating, enables circulation. Closes window → normal heating resumes.
-
-**Zone-level window behavior**:
-- Per-zone window sensors feed into zone decision logic (passive mode trigger)
-- Zone fans may use `window_fan_speed` for passive circulation
-- System-level override supersedes all per-zone logic
-
-### Humidity passive cooling
-Triggers passive mode when BOTH:
-- Zone humidity ≥ `passive_humid_threshold` (55% default)
-- Zone temp ≥ `passive_threshold` (72°F default)
-- Season = summer
-
-Useful in high-humidity climates to dehumidify without AC.
-
-### Fan lock integration
-Zone respects legacy fan lock system:
-- Zone checks `input_boolean.fan_user_claimed_*` for each fan
-- If lock ON, zone skips that fan (user has claimed it)
-- Compatible with per-fan speed storage helpers
+### Dashboard
+`/dashboard-hvac` — system status + reasoning, per-zone cards, upstairs temp glance, thermostat history, logbook with last-off attribution, controls, setpoint sliders, force-evaluate button.
 
 ### Testing
-1. SSH to HA: `ssh -i ~/.ssh/infra hassio@192.168.255.247`
-2. Copy integration: `cp -r custom_components/adaptive_hvac /config/custom_components/`
-3. Restart HA or reload via Settings → Integrations → Reload
-4. Add system entry via Settings → Integrations → Add → Adaptive HVAC
-5. Add zone entries (one per room)
-6. Monitor `sensor.adaptive_hvac_*` in Developer Tools → States
-7. Use `/api/services/adaptive_hvac/force_evaluate` to trigger immediate cycle
+```bash
+# Force immediate evaluation
+source ~/.secrets && curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate \
+  -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
 
-### Known Gaps & Future Work
-- **Primary zone selection tuning**: Dynamic logic works but may need refinement for multi-zone occupancy scenarios (e.g., which zone is "primary" for AC activation)
-- **Zone sensor entities**: Zone sensors not yet created (sensor platform integration incomplete)
-- **Equalization mode**: Not yet implemented in logic.py (floor-to-floor delta balancing)
-- **Pre-cool / pre-heat**: Use basic forecast thresholds, no solar irradiance gating yet
-- **Fan pool UI**: Fan configuration stored as nested JSON in zone options; full UI pending
-- **Dashboard**: Visualizations for zone modes, fan commands, active zone selection pending
-- **Multi-thermostat**: Architecture supports it (config can store multiple), but only single thermostat tested
-- **Per-fan nullable speeds**: Require config entry rebuild on change (HA limitation)
+# Read current decision + reasoning
+curl -s http://ha.iot.scansenconsulting.com:8123/api/states/sensor.adaptive_hvac_status \
+  -H "Authorization: Bearer $HA_TOKEN" | python3 -c "import json,sys; s=json.load(sys.stdin); print(s['state']); print(s['attributes'].get('reasoning'))"
+```
 
-### Dev notes
-- Logic layer is pure Python (no HA imports) — easy to unit test
-- Fan commands are placeholder (fan_id) in logic, mapped to real entity IDs in coordinator
-- Coordinator reads system config from entry.data at startup; changes require reload
-- Zone coordinator runs independently on SCAN_INTERVAL (3 min); system coordinator aggregates
+### Known stale entities
+`switch.adaptive_hvac_calebs_office_auto` (no `_2`) — orphaned registry entry, unavailable, safe to ignore. The `_2` variant is the live one.
 
-### Release Checklist
-**CRITICAL: Never tag/release until code is final. Tags left behind by later commits cause HACS users to download broken code.**
-
-Correct workflow:
-1. Finalize ALL code changes on master
-2. Test thoroughly (including on HA)
-3. Commit final changes: `git add -A && git commit -m "..."`
-4. Verify: `git log -1 --oneline` — this is your release commit
-5. Update `manifest.json` version field
-6. Add entry to `CHANGELOG.md` (Added/Changed/Fixed/Removed)
-7. Create GitHub Release: `gh release create vX.Y.Z --notes "..."` (this tags HEAD)
-8. Verify release points to correct commit: `git show-ref vX.Y.Z` should match `git log -1`
-9. **DO NOT COMMIT ANYTHING AFTER CREATING THE RELEASE**
-10. HACS users will download exactly what the release points to
-
-**Why this matters**: HACS downloads from GitHub releases. If you tag at commit A, then commit B, the release stays at A. HACS users get stale code. In 2026-05-25, v0.2.15 was released at commit 27b5040, then commit b6f1b0f was added. HACS users got the broken 27b5040 code and spent hours debugging import errors that were already fixed in b6f1b0f.
-
-**CHANGELOG format**: Follow [Keep a Changelog](https://keepachangelog.com) standard. Each release gets a section with date and version, organized by Added/Changed/Fixed/Removed.
-
-### v0.2.19: System-Level AC/Heat Gating (✓ Implemented 2026-05-26)
-
-**Architecture Change:**
-Moved AC/heat gating logic from zone-based ("primary zone") to system-level using aggregated temperature sensor + exterior weather + calendar season. **All configuration options are customizable via UI.**
-
-**Implemented:**
-- **Zone roles simplified:** Each zone controls local fans + makes local decisions. Zones do NOT gate system AC/heat. ✓
-- **System-level gating:** Uses `sensor.upstairs_average_temperature` + exterior weather from `weather.forecast_home` ✓
-- **Calendar season detection (customizable):** Default Oct-April = winter, May-Sept = summer (not forecast-based, adjustable per local climate) ✓
-- **Configurable season dates:**
-  - `winter_start_month` / `winter_end_month` (default: 10/4)
-  - `summer_start_month` / `summer_end_month` (default: 5/9)
-- **Configurable AC/Heat gating thresholds:**
-  - Exterior: cool ≥ 70°F, heat ≤ 60°F
-  - Interior: cool ≥ 74°F, heat ≤ 68°F
-- **Season-aware logic:**
-  ```
-  SUMMER: AC allowed if exterior >= cool_exterior_threshold AND upstairs_avg >= cool_interior_threshold
-  WINTER: Heat allowed if exterior <= heat_exterior_threshold AND upstairs_avg <= heat_interior_threshold
-  SHOULDER: System OFF (fans/passive only, no thermostat)
-  ```
-- **Dispatch-time gating:** `_dispatch_thermostat()` applies gating before sending commands — blocks AC/heat if thresholds not met ✓
-- **Detailed logging:** All gating decisions logged to `/config/adaptive_hvac_coordinator.log` for diagnostics ✓
-- **Config UI:** Settings → Integrations → Adaptive HVAC → Configure → Step 3e (month dropdowns, temperature sliders) ✓
-
-**Testing:**
-- Tested summer gating (May 26): exterior 85°F, upstairs 76°F → AC allowed ✓
-- Config flow working with month selection and threshold adjustment ✓
-- Logs show proper zone aggregation + gating decision with current threshold values ✓
-
-**Benefits:**
-- No fighting with weather (e.g., won't AC when outside is cool) ✓
-- Prevents unnecessary heating when it's warm out ✓
-- Cleaner zone model (zones = fan/local control only) ✓
-- True system-wide thermal decision based on aggregate signal ✓
-- **Customizable for any climate** — adjust season dates and thresholds without code changes ✓
-
-**Related entities:**
-- `sensor.upstairs_average_temperature` — aggregated interior signal (reads Caleb + Tia + Master)
-- `weather.forecast_home` — exterior conditions (reads current temp)
-
-### Next Steps for Adaptive HVAC (v0.2.20+)
-
-**Priority 1 — Extended Gating Testing (Winter Scenario)**
-- [ ] Simulate winter conditions (outdoor temp 40°F) to verify heat gating works
-- [ ] Verify shoulder season (March, April) behaves as system OFF
-- [ ] Test gating boundary conditions (70.1°F vs 69.9°F exterior)
-- [ ] Verify logs show correct gating reasoning for all conditions
-
-**Priority 2 — Complete Zone Sensor Platform**
-- [ ] Create zone sensor entities (`sensor.adaptive_hvac_{zone_slug}_status`, `sensor.adaptive_hvac_{zone_slug}_trend`)
-- [ ] Zone sensors should show real-time zone status and temperature trend
-- [ ] Currently zone state is only visible in system status text; separate entities aid diagnostics
-
-**Priority 3 — A/B Testing Against Old YAML Automations**
-- [ ] Run integration and old automations in parallel
-- [ ] Compare decisions: same thermostat mode, setpoint, and fan speeds?
-- [ ] Log both to dashboards for side-by-side comparison
-- [ ] Run for 7+ days to verify behavior across different thermal conditions
-- [ ] Once matched, disable old automations and switch to integration-only
-
-**Priority 4 — Feature Testing Checklist**
-- [ ] **Window override**: Open window → AC off, whole-house fan on, stay off until close
-- [ ] **Sleep mode blocking**: Sleep posture ON → no heat, stays off until sleep posture OFF
-- [ ] **Occupancy setback**: 8h unoccupied → cool to 76°F, heat to 62°F; return home → restore
-- [ ] **Fan lock respect**: User-claimed fans not overridden by zone/system decisions
-- [ ] **Humidity passive cooling**: High humidity + warm temp → passive fan mode (no AC)
-- [ ] **Season transitions**: Verify auto-detect and manual override work correctly
-- [ ] **Gating transitions**: Verify system OFF when thresholds not met (fans still available)
-
-**Priority 5 — Dashboard & Visibility**
-- [ ] Build Lovelace dashboard for `dashboard-hvac` with zone cards
-- [ ] Show: zone temp/trend/mode, system decision, thermostat setpoint, gating status
-- [ ] Add service call buttons for `force_evaluate` and manual override toggle
-- [ ] Display gating thresholds and whether AC/heat is allowed
-
-**Testing Tools**
-- `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'` — trigger immediate evaluation
-- `/config/adaptive_hvac_coordinator.log` — detailed aggregation logs (zone refresh, decision collection, system decision)
-- `sensor.adaptive_hvac_status` → reasoning attribute — shows decision tree and logic path
+**For complete configuration:** See `docs/adaptive_hvac.md`
 
 ## Notes
 - Still learning HA — update this file as patterns emerge
