@@ -4,6 +4,12 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.3] - 2026-05-29
+
+### Changed
+- `windows_assumed_open` no longer blocks AC — sensor is informational only; removed the thermostat-off gate from `decide_system`
+- Updated `windows_assumed_open` template: threshold tightened to 58–68°F (was 60–75°F) and removed dependency on the old `input_select.hvac_season` entity
+
 ## [0.3.2] - 2026-05-29
 
 ### Changed

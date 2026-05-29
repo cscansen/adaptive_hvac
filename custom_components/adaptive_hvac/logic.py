@@ -234,17 +234,6 @@ def decide_system(
             reasoning=["System paused via switch"],
         )
 
-    # Windows open in summer → thermostat off, whole-house fan on
-    if sys_state.windows_assumed_open and season == "summer":
-        reasoning.append("Windows assumed open (summer) — thermostat OFF")
-        return SystemDecision(
-            thermostat_hvac_mode="off",
-            whole_house_fan_mode="on",
-            season=season,
-            status="SYSTEM: WINDOWS OPEN — passive ventilation",
-            reasoning=reasoning,
-        )
-
     # Emergency requests bypass gating
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
     emergency_heat = any(d.mode == "emergency_heating" for d in zone_decisions)
