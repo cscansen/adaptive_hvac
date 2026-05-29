@@ -50,12 +50,19 @@ TREND_WINDOW_MIN = 30
 class ZoneCoordinator(DataUpdateCoordinator):
     """Coordinator for a single HVAC zone."""
 
-    def __init__(self, hass: HomeAssistant, zone_name: str, zone_config: dict):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        zone_name: str,
+        zone_config: dict,
+        config_entry: Optional["ConfigEntry"] = None,
+    ):
         super().__init__(
             hass,
             _LOGGER,
             name=f"Adaptive HVAC - {zone_name}",
             update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
+            config_entry=config_entry,
         )
         self.zone_name = zone_name
         self.zone_config = zone_config
@@ -250,6 +257,7 @@ class SystemCoordinator(DataUpdateCoordinator):
             _LOGGER,
             name="Adaptive HVAC - System",
             update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
+            config_entry=config_entry,
         )
         self.system_config = dict(system_config)
         self.zone_coordinators = zone_coordinators

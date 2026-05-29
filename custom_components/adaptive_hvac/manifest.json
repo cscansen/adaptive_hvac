@@ -7,6 +7,6 @@
   "documentation": "https://github.com/cscansen/adaptive_hvac",
   "issue_tracker": "https://github.com/cscansen/adaptive_hvac/issues",
   "requirements": [],
-  "version": "0.3.0",
+  "version": "0.3.1",
   "homeassistant": "2024.1.0"
 }

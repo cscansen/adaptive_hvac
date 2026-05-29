@@ -107,8 +107,9 @@ class ZoneAutoControlSwitch(RestoreEntity, SwitchEntity):
         self._attr_has_entity_name = True
         self._attr_name = "Auto Control"
 
-        # Entity ID: switch.adaptive_hvac_{zone_slug}_auto
-        zone_slug = zone_name.lower().replace(" ", "_")
+        # Entity ID: switch.adaptive_hvac_{zone_slug}_auto — sanitize to valid HA entity ID chars
+        import re
+        zone_slug = re.sub(r"[^a-z0-9_]", "", zone_name.lower().replace(" ", "_"))
         self._attr_unique_id = f"{DOMAIN}_{zone_slug}_auto"
         self.entity_id = f"switch.{DOMAIN}_{zone_slug}_auto"
 
