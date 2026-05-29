@@ -6,56 +6,30 @@ from typing import Optional
 from collections import deque
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
     ENTRY_TYPE_ZONE,
     SCAN_INTERVAL_MINUTES,
-    DEFAULT_COMFORT_UPPER,
-    DEFAULT_PASSIVE_THRESHOLD,
-    DEFAULT_PASSIVE_HUMID_THRESHOLD,
-    DEFAULT_ESCALATE_THRESHOLD,
-    DEFAULT_EMERGENCY_THRESHOLD,
-    DEFAULT_COMFORT_SPEED,
-    DEFAULT_PASSIVE_FAN_SPEED,
-    DEFAULT_WINDOW_FAN_SPEED,
-    DEFAULT_PRECOOL_FAN_SPEED,
-    DEFAULT_ESCALATE_FAN_SPEED,
-    DEFAULT_EMERGENCY_FAN_SPEED,
-    DEFAULT_WINDOWS_SENSOR,
+    DEFAULT_ZONE_TARGET_TEMP,
+    DEFAULT_FAN_SPEED,
     DEFAULT_AC_SETPOINT,
     DEFAULT_HEAT_THRESHOLD,
     DEFAULT_HEAT_SETPOINT,
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
-    DEFAULT_SETBACK_COOL_TEMP,
-    DEFAULT_SETBACK_HEAT_TEMP,
-    DEFAULT_UNOCCUPIED_HOURS,
-    DEFAULT_RETURN_HOME_COOL_SETPOINT,
-    DEFAULT_RETURN_HOME_HEAT_SETPOINT,
-    DEFAULT_PRECOOL_TRIGGER,
-    DEFAULT_PREHEAT_TRIGGER,
-    DEFAULT_AC_TRIGGER_SOLAR_WATTS,
-    DEFAULT_AC_SOLAR_WINDOW_START,
-    DEFAULT_AC_SOLAR_WINDOW_END,
-    DEFAULT_AC_TRIGGER_HUMIDITY,
-    DEFAULT_WINDOW_FAN_SPEED,
-    DEFAULT_PASSIVE_COOLING_ENABLED,
-    DEFAULT_WHOLE_HOUSE_FAN_ENTITY,
-    DEFAULT_SUMMER_THRESHOLD,
-    DEFAULT_WINTER_THRESHOLD,
-    DEFAULT_IS_PRIMARY_ZONE,
-    DEFAULT_AUTO_CONTROL_ENABLED,
+    DEFAULT_EMERGENCY_COOL_THRESHOLD,
+    DEFAULT_WINDOWS_SENSOR,
     DEFAULT_WINTER_START_MONTH,
     DEFAULT_WINTER_END_MONTH,
-    DEFAULT_SUMMER_START_MONTH,
-    DEFAULT_SUMMER_END_MONTH,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
-    DEFAULT_COOL_INTERIOR_THRESHOLD,
+    DEFAULT_COOL_INTERIOR_OVERRIDE_DELTA,
     DEFAULT_HEAT_EXTERIOR_THRESHOLD,
-    DEFAULT_HEAT_INTERIOR_THRESHOLD,
+    DEFAULT_AUTO_CONTROL_ENABLED,
+    SEASON_SUMMER,
+    SEASON_WINTER,
 )
 from .logic import (
     ZoneState,
@@ -67,23 +41,16 @@ from .logic import (
     decide_zone,
     decide_system,
 )
-from .season import SeasonState, derive_season
 
 _LOGGER = logging.getLogger(__name__)
 
-TREND_WINDOW_MIN = 30  # Calculate trend over last 30 minutes
+TREND_WINDOW_MIN = 30
 
 
 class ZoneCoordinator(DataUpdateCoordinator):
     """Coordinator for a single HVAC zone."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        zone_name: str,
-        zone_config: dict,
-    ):
-        """Initialize zone coordinator."""
+    def __init__(self, hass: HomeAssistant, zone_name: str, zone_config: dict):
         super().__init__(
             hass,
             _LOGGER,
@@ -92,27 +59,15 @@ class ZoneCoordinator(DataUpdateCoordinator):
         )
         self.zone_name = zone_name
         self.zone_config = zone_config
-        self._temp_samples = deque(maxlen=30)  # 30 min of 1-sample/min
+        self._temp_samples: deque[float] = deque(maxlen=30)
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
-
-        # Log zone config for debugging
-        _LOGGER.info(f"ZoneCoordinator init for {zone_name}")
-        _LOGGER.info(f"  zone_config keys: {list(zone_config.keys())}")
-        _LOGGER.info(f"  temp_sensors: {zone_config.get('temp_sensors')}")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[ZoneCoordinator.__init__] {zone_name}\n")
-            f.write(f"  zone_config keys: {list(zone_config.keys())}\n")
-            f.write(f"  temp_sensors: {zone_config.get('temp_sensors')}\n")
 
     def _read_temp(self) -> float:
         """Read and average zone temperature sensors."""
         temp_entities = self.zone_config.get("temp_sensors", [])
-        _LOGGER.debug(f"_read_temp for {self.zone_name}: temp_entities={temp_entities}")
         if not temp_entities:
-            _LOGGER.warning(f"_read_temp {self.zone_name}: NO temp_entities configured!")
-            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                f.write(f"[_read_temp] {self.zone_name}: NO temp_entities\n")
+            _LOGGER.warning(f"Zone {self.zone_name}: no temp_sensors configured")
             return 0.0
 
         temps = []
@@ -120,247 +75,163 @@ class ZoneCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(entity_id)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
-                    temp_val = float(state.state)
-                    temps.append(temp_val)
-                    _LOGGER.debug(f"  {entity_id}={temp_val}°F")
-                except ValueError as e:
-                    _LOGGER.warning(f"  {entity_id}: invalid state '{state.state}': {e}")
-            else:
-                # Sensor not available yet - this might be a startup timing issue
-                # Return None to indicate data is unavailable, not 0.0 (which triggers failsafe)
-                state_info = f"state={state.state if state else 'NOT FOUND'}"
-                _LOGGER.info(f"  {entity_id}: {state_info} (sensor may not be loaded yet)")
-                with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                    f.write(f"  {entity_id}: {state_info}\n")
+                    temps.append(float(state.state))
+                except ValueError:
+                    _LOGGER.warning(f"Zone {self.zone_name}: invalid temp state '{state.state}' from {entity_id}")
 
-        result = sum(temps) / len(temps) if temps else 0.0
-        _LOGGER.debug(f"_read_temp {self.zone_name}: avg temp={result}°F from {len(temps)} sensors")
-        return result
+        return sum(temps) / len(temps) if temps else 0.0
 
     def _read_humidity(self) -> Optional[float]:
-        """Read humidity sensor(s) — average if multiple."""
-        humidity_entities = self.zone_config.get("humidity_sensor", [])
-        if not humidity_entities:
-            return None
+        """Read humidity sensor(s) — averaged if multiple."""
+        entities = self.zone_config.get("humidity_sensor", [])
+        if isinstance(entities, str):
+            entities = [entities] if entities else []
 
-        # Handle both single entity (string) and multiple (list) for backwards compatibility
-        if isinstance(humidity_entities, str):
-            humidity_entities = [humidity_entities]
-
-        humidity_values = []
-        for entity in humidity_entities:
-            state = self.hass.states.get(entity)
+        values = []
+        for entity_id in entities:
+            state = self.hass.states.get(entity_id)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
-                    humidity_values.append(float(state.state))
+                    values.append(float(state.state))
                 except ValueError:
                     pass
 
-        return sum(humidity_values) / len(humidity_values) if humidity_values else None
+        return sum(values) / len(values) if values else None
 
     def _read_window_open(self) -> bool:
-        """Check if zone window(s) are open — True if ANY window is open."""
-        window_entities = self.zone_config.get("window_sensor", [])
-        if not window_entities:
-            return False
+        """True if any zone window sensor is open."""
+        entities = self.zone_config.get("window_sensor", [])
+        if isinstance(entities, str):
+            entities = [entities] if entities else []
 
-        # Handle both single entity (string) and multiple (list) for backwards compatibility
-        if isinstance(window_entities, str):
-            window_entities = [window_entities]
-
-        for entity in window_entities:
-            state = self.hass.states.get(entity)
-            if state and state.state == "on":
-                return True
-        return False
+        return any(
+            self.hass.states.is_state(e, "on")
+            for e in entities
+        )
 
     def _read_occupancy(self) -> bool:
-        """Check if zone is occupied — True if ANY occupancy sensor is occupied."""
-        occupancy_entities = self.zone_config.get("occupancy_sensor", [])
-        if not occupancy_entities:
-            return True  # Default to occupied if not specified
+        """True if any zone occupancy sensor is occupied (default True if none configured)."""
+        entities = self.zone_config.get("occupancy_sensor", [])
+        if isinstance(entities, str):
+            entities = [entities] if entities else []
 
-        # Handle both single entity (string) and multiple (list) for backwards compatibility
-        if isinstance(occupancy_entities, str):
-            occupancy_entities = [occupancy_entities]
+        if not entities:
+            return True
 
-        for entity in occupancy_entities:
-            state = self.hass.states.get(entity)
-            if state and state.state == "on":
-                return True
-        return False
+        return any(self.hass.states.is_state(e, "on") for e in entities)
 
     def _read_fan_claims(self) -> set[str]:
-        """Get set of claimed fan entity IDs (from per-fan lock entities in fan_config)."""
+        """Return set of claimed fan entity IDs (checked via fan_lock_entity flags)."""
         claimed = set()
-        fan_config = self.zone_config.get("fan_config", [])
-        for fan_entry in fan_config:
+        for fan_entry in self.zone_config.get("fan_config", []):
             lock_entity = fan_entry.get("fan_lock_entity")
-            if lock_entity:
-                state = self.hass.states.get(lock_entity)
-                if state and state.state == "on":
-                    claimed.add(fan_entry.get("fan_id"))
+            if lock_entity and self.hass.states.is_state(lock_entity, "on"):
+                claimed.add(fan_entry.get("fan_id"))
         return claimed
 
     def _read_auto_control_enabled(self) -> bool:
         """Check if zone auto-control switch is on."""
-        auto_control_entity = f"switch.adaptive_hvac_{self.zone_name.lower().replace(' ', '_')}_auto"
-        state = self.hass.states.get(auto_control_entity)
+        zone_slug = self.zone_name.lower().replace(" ", "_")
+        auto_entity = f"switch.adaptive_hvac_{zone_slug}_auto"
+        state = self.hass.states.get(auto_entity)
         if state:
             return state.state == "on"
         return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
     def _read_windows_assumed_open(self) -> bool:
         """Read global windows open sensor."""
-        windows_entity = DEFAULT_WINDOWS_SENSOR
-        if not windows_entity:
-            return False
-
-        state = self.hass.states.get(windows_entity)
-        return state and state.state == "on" if state else False
+        state = self.hass.states.get(DEFAULT_WINDOWS_SENSOR)
+        return bool(state and state.state == "on")
 
     def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
-        """Map placeholder fan commands to real entity IDs from fan_config."""
+        """Map placeholder zone_name keys to real fan entity IDs from fan_config."""
         mapped = {}
-        fan_config = self.zone_config.get("fan_config", [])
         fans_claimed = self._read_fan_claims()
 
-        for fan_entry in fan_config:
+        for fan_entry in self.zone_config.get("fan_config", []):
             fan_id = fan_entry.get("fan_id")
             fan_entity = fan_entry.get("fan_entity")
 
-            # Skip if fan is claimed by user or entity not defined
             if not fan_entity or fan_id in fans_claimed:
                 continue
 
-            # Get speed from the placeholder command
             if fan_id in fan_commands:
                 speed = fan_commands[fan_id]
-                # Only add if speed is not None (None = skip this mode for this fan)
                 if speed is not None:
                     mapped[fan_entity] = speed
+
+        # If fan_config is not set but fans list is, use zone_name key directly mapped to fans list
+        if not self.zone_config.get("fan_config"):
+            fans = self.zone_config.get("fans", [])
+            if fans and self.zone_name in fan_commands:
+                speed = fan_commands[self.zone_name]
+                if speed is not None:
+                    for fan_entity in fans:
+                        mapped[fan_entity] = speed
 
         return mapped
 
     def _calculate_trend(self) -> float:
-        """
-        Calculate temperature trend in °F/hr over 30-min window.
-
-        Uses simple linear regression if enough samples.
-        """
-        if len(self._temp_samples) < 2:
-            return 0.0
-
+        """Calculate temperature trend in °F/hr over 30-min window (linear regression)."""
         samples = list(self._temp_samples)
         n = len(samples)
+        if n < 2:
+            return 0.0
 
-        # Simple linear regression
-        x = list(range(n))
-        y = samples
+        x_mean = (n - 1) / 2.0
+        y_mean = sum(samples) / n
 
-        x_mean = sum(x) / n
-        y_mean = sum(y) / n
-
-        numerator = sum((x[i] - x_mean) * (y[i] - y_mean) for i in range(n))
-        denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
+        numerator = sum((i - x_mean) * (samples[i] - y_mean) for i in range(n))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
 
         if denominator == 0:
             return 0.0
 
-        slope_per_min = numerator / denominator
-        slope_per_hour = slope_per_min * 60
-
-        return slope_per_hour
+        return (numerator / denominator) * 60  # convert per-minute slope to per-hour
 
     async def _async_update_data(self) -> ZoneDecision:
-        """Fetch and compute zone decision."""
+        """Fetch zone state and compute zone decision."""
         temp = self._read_temp()
         self._temp_samples.append(temp)
 
-        humidity = self._read_humidity()
-        window_open = self._read_window_open()
-        zone_occupied = self._read_occupancy()
-        fans_claimed = self._read_fan_claims()
-        windows_assumed_open = self._read_windows_assumed_open()
-        trend = self._calculate_trend()
-
-        # Build zone state
         zone = ZoneState(
             zone_name=self.zone_name,
             floor=self.zone_config.get("floor", ""),
             temp=temp,
-            temp_trend=trend,
-            humidity=humidity,
-            fans_claimed=fans_claimed,
-            window_open=window_open,
-            zone_occupied=zone_occupied,
+            temp_trend=self._calculate_trend(),
+            humidity=self._read_humidity(),
+            fans_claimed=self._read_fan_claims(),
+            window_open=self._read_window_open(),
+            zone_occupied=self._read_occupancy(),
             current_mode=self.last_decision.mode if self.last_decision else "idle",
-            is_primary_zone=self.zone_config.get("is_primary_zone", DEFAULT_IS_PRIMARY_ZONE),
-            windows_assumed_open=windows_assumed_open,
+            windows_assumed_open=self._read_windows_assumed_open(),
+            zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
         )
 
-        # Track mode age
-        if self.last_decision and self.last_decision.mode != zone.current_mode:
-            self._mode_entered_at = datetime.now()
-        elif not self._mode_entered_at:
-            self._mode_entered_at = datetime.now()
-
-        zone.mode_age_min = (datetime.now() - self._mode_entered_at).total_seconds() / 60
-
-        # Build zone config (cooling thresholds + per-mode fan speeds only; heating is global)
         cfg = ZoneConfig(
-            comfort_upper=self.zone_config.get("comfort_upper", DEFAULT_COMFORT_UPPER),
-            passive_threshold=self.zone_config.get("passive_threshold", DEFAULT_PASSIVE_THRESHOLD),
-            passive_humid_threshold=self.zone_config.get("passive_humid_threshold", DEFAULT_PASSIVE_HUMID_THRESHOLD),
-            escalate_threshold=self.zone_config.get("escalate_threshold", DEFAULT_ESCALATE_THRESHOLD),
-            emergency_threshold=self.zone_config.get("emergency_threshold", DEFAULT_EMERGENCY_THRESHOLD),
-            comfort_speed=self.zone_config.get("comfort_speed", DEFAULT_COMFORT_SPEED),
-            passive_fan_speed=self.zone_config.get("passive_fan_speed", DEFAULT_PASSIVE_FAN_SPEED),
-            window_fan_speed=self.zone_config.get("window_fan_speed", DEFAULT_WINDOW_FAN_SPEED),
-            precool_fan_speed=self.zone_config.get("precool_fan_speed", DEFAULT_PRECOOL_FAN_SPEED),
-            escalate_fan_speed=self.zone_config.get("escalate_fan_speed", DEFAULT_ESCALATE_FAN_SPEED),
-            emergency_fan_speed=self.zone_config.get("emergency_fan_speed", DEFAULT_EMERGENCY_FAN_SPEED),
-            ac_setpoint=self.zone_config.get("ac_setpoint", DEFAULT_AC_SETPOINT),
+            zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
+            fan_speed=int(self.zone_config.get("fan_speed", DEFAULT_FAN_SPEED)),
+            emergency_cool_threshold=float(self.zone_config.get("emergency_cool_threshold", DEFAULT_EMERGENCY_COOL_THRESHOLD)),
         )
 
-        # Placeholder: system state (will be filled by SystemCoordinator)
+        # Minimal system state for zone-level decisions (system coordinator fills in full state)
         sys_state = SystemState(
             zone_states=[zone],
             outdoor_temp=70.0,
-            forecast_high=85.0,
-            forecast_low=65.0,
-            forecast_high_7day_avg=75.0,
-            forecast_low_7day_avg=55.0,
-            solar_w=1000,
+            season=SEASON_SUMMER,
         )
+        sys_cfg = SystemConfig()
 
-        sys_cfg = SystemConfig(
-            summer_threshold=DEFAULT_SUMMER_THRESHOLD,
-            winter_threshold=DEFAULT_WINTER_THRESHOLD,
-            precool_trigger=DEFAULT_PRECOOL_TRIGGER,
-            preheat_trigger=DEFAULT_PREHEAT_TRIGGER,
-        )
+        decision = decide_zone(zone, sys_state, cfg, sys_cfg)
 
-        # Check if auto-control is enabled for this zone
-        auto_control_enabled = self._read_auto_control_enabled()
-
-        # Decide
-        decision = decide_zone(zone, [zone], sys_state, cfg, sys_cfg)
-
-        # Map placeholder fan commands to real entity IDs from fan_config
-        if auto_control_enabled:
+        auto_control = self._read_auto_control_enabled()
+        if auto_control:
             decision.fan_commands = self._map_fan_commands(decision.fan_commands)
         else:
-            # If auto-control is disabled, suppress fan commands but keep mode/status for diagnostics
             decision.fan_commands = {}
 
         self.last_decision = decision
-
-        _LOGGER.debug(
-            f"Zone {self.zone_name} decision: {decision.mode} - {decision.status}"
-            f" (auto_control={'on' if auto_control_enabled else 'off'})"
-        )
-
+        _LOGGER.debug(f"Zone {self.zone_name}: {decision.mode} — {decision.status}")
         return decision
 
 
@@ -372,492 +243,269 @@ class SystemCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         system_config: dict,
         zone_coordinators: list[ZoneCoordinator],
+        config_entry: Optional[ConfigEntry] = None,
     ):
-        """Initialize system coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name="Adaptive HVAC - System",
             update_interval=timedelta(minutes=SCAN_INTERVAL_MINUTES),
         )
-        self.system_config = system_config
+        self.system_config = dict(system_config)
         self.zone_coordinators = zone_coordinators
         self.last_decision: Optional[SystemDecision] = None
-        self._season_state = SeasonState()
+        self._config_entry = config_entry
+        self._last_integration_setpoint: Optional[float] = None
+        self._last_season: Optional[str] = None
 
-    def _read_weather(self) -> tuple[float, float, float, float]:
-        """Read weather entity for forecast."""
+    def determine_calendar_season(self) -> str:
+        """Determine season — respects manual override, otherwise calendar-based."""
+        override = self.system_config.get("season_override", "auto")
+        if override in (SEASON_SUMMER, SEASON_WINTER):
+            return override
+
+        month = dt_util.now().month
+        winter_start = int(self.system_config.get("winter_start_month", DEFAULT_WINTER_START_MONTH))
+        winter_end = int(self.system_config.get("winter_end_month", DEFAULT_WINTER_END_MONTH))
+
+        # Winter spans the year boundary (e.g., Oct=10 → Apr=4)
+        if winter_start > winter_end:
+            in_winter = month >= winter_start or month <= winter_end
+        else:
+            in_winter = winter_start <= month <= winter_end
+
+        return SEASON_WINTER if in_winter else SEASON_SUMMER
+
+    @callback
+    def handle_thermostat_state_change(self, event) -> None:
+        """Adopt thermostat setpoint changes made by the user (faceplate or app)."""
+        new_state = event.data.get("new_state")
+        if not new_state:
+            return
+
+        new_setpoint = new_state.attributes.get("temperature")
+        if new_setpoint is None:
+            return
+
+        try:
+            new_setpoint = float(new_setpoint)
+        except (ValueError, TypeError):
+            return
+
+        # Ignore our own dispatches (within 0.5°F tolerance)
+        if self._last_integration_setpoint is not None:
+            if abs(new_setpoint - self._last_integration_setpoint) < 0.5:
+                return
+
+        season = self.determine_calendar_season()
+        key = "ac_setpoint" if season == SEASON_SUMMER else "heat_setpoint"
+
+        _LOGGER.info(
+            f"User adjusted thermostat to {new_setpoint}°F — adopting as {season} {key}"
+        )
+        self.system_config[key] = new_setpoint
+
+        if self._config_entry:
+            new_options = {**self._config_entry.options, key: new_setpoint}
+            self.hass.async_create_task(
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, options=new_options
+                )
+            )
+
+    def _read_outdoor_temp(self) -> float:
+        """Read current outdoor temperature from weather entity."""
         weather_entity = self.system_config.get("weather_entity")
         if not weather_entity:
-            return 70.0, 85.0, 65.0, 75.0
+            return 70.0
 
         state = self.hass.states.get(weather_entity)
         if not state:
-            return 70.0, 85.0, 65.0, 75.0
+            return 70.0
 
-        # Extract forecast attributes (HomeAssistant weather service)
-        attrs = state.attributes
         try:
-            outdoor_temp = float(attrs.get("temperature", 70.0))
-            forecast_high = float(attrs.get("forecast", [{}])[0].get("temperature", 85.0))
-            forecast_low = float(attrs.get("forecast", [{}])[0].get("templow", 65.0))
-            # 7-day average (simplified: use today's forecast)
-            forecast_high_7day = forecast_high
-            forecast_low_7day = forecast_low
-        except (ValueError, TypeError, IndexError):
-            return 70.0, 85.0, 65.0, 75.0
-
-        return outdoor_temp, forecast_high, forecast_low, forecast_high_7day
-
-    def _read_solar(self) -> float:
-        """Read solar production sensor."""
-        solar_entity = self.system_config.get("solar_entity")
-        if not solar_entity:
-            return 0.0
-
-        state = self.hass.states.get(solar_entity)
-        if state and state.state not in ("unknown", "unavailable"):
-            try:
-                return float(state.state)
-            except ValueError:
-                pass
-        return 0.0
+            return float(state.attributes.get("temperature", 70.0))
+        except (ValueError, TypeError):
+            return 70.0
 
     def _read_sleep_posture(self) -> bool:
-        """Read sleep posture state."""
-        sleep_entity = self.system_config.get("sleep_posture_entity")
-        if not sleep_entity:
+        """Read sleep posture flag (retained for diagnostics/future use)."""
+        entity = self.system_config.get("sleep_posture_entity")
+        if not entity:
             return False
+        state = self.hass.states.get(entity)
+        return bool(state and state.state == "on")
 
-        state = self.hass.states.get(sleep_entity)
-        return state and state.state == "on" if state else False
-
-    def _read_house_occupancy(self) -> tuple[bool, float]:
-        """
-        Read house-level occupancy.
-
-        Returns tuple of (is_occupied, unoccupied_hours)
-        """
-        occupancy_entities = self.system_config.get("occupancy_entities", [])
-        if not occupancy_entities:
-            return True, 0.0
-
-        occupied = any(
-            self.hass.states.is_state(entity, "on")
-            for entity in occupancy_entities
-        )
-
-        # Simplified: if any occupied, unoccupied_hours = 0
-        # In real implementation, would track last occupancy timestamp
-        return occupied, 0.0 if occupied else 8.0
+    def _read_house_occupancy(self) -> bool:
+        """True if any occupancy entity is on."""
+        entities = self.system_config.get("occupancy_entities", [])
+        if not entities:
+            return True
+        return any(self.hass.states.is_state(e, "on") for e in entities)
 
     def _read_windows_assumed_open(self) -> bool:
         """Read global windows open sensor."""
-        windows_entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
-        if not windows_entity:
+        entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
+        if not entity:
             return False
+        state = self.hass.states.get(entity)
+        return bool(state and state.state == "on")
 
-        state = self.hass.states.get(windows_entity)
-        return state and state.state == "on" if state else False
+    def _effective_setpoint(self, key: str, default: float) -> float:
+        """Read setpoint: options override > system_config > const default."""
+        if self._config_entry:
+            val = self._config_entry.options.get(key)
+            if val is not None:
+                return float(val)
+        return float(self.system_config.get(key, default))
 
-    def _read_upstairs_average_temp(self) -> Optional[float]:
-        """Read upstairs average temperature sensor (aggregated: Caleb + Tia + Master)."""
-        # v0.2.19: System-level gating uses aggregated interior temperature signal
-        upstairs_avg_entity = self.system_config.get("upstairs_average_temp_entity", "sensor.upstairs_average_temperature")
-        if not upstairs_avg_entity:
-            return None
+    def _reset_setpoints_for_season_change(self, new_season: str) -> None:
+        """On season transition, remove user-set override so base config takes effect."""
+        if not self._config_entry:
+            return
 
-        state = self.hass.states.get(upstairs_avg_entity)
-        if state and state.state not in ("unknown", "unavailable"):
-            try:
-                return float(state.state)
-            except ValueError:
-                return None
-        return None
+        keys_to_reset = ["ac_setpoint"] if new_season == SEASON_SUMMER else ["heat_setpoint"]
+        new_options = {k: v for k, v in self._config_entry.options.items() if k not in keys_to_reset}
 
-    def _determine_calendar_season(self) -> str:
-        """
-        Determine season from calendar month (not forecast-based).
-
-        Uses configurable season dates from system config.
-        Default: Oct-April = winter, May-Sept = summer
-
-        Returns:
-            "winter" or "summer"
-        """
-        month = dt_util.now().month
-        winter_start = self.system_config.get("winter_start_month", DEFAULT_WINTER_START_MONTH)
-        winter_end = self.system_config.get("winter_end_month", DEFAULT_WINTER_END_MONTH)
-
-        # Convert to int if they came from config flow as strings
-        try:
-            winter_start = int(winter_start)
-            winter_end = int(winter_end)
-        except (ValueError, TypeError):
-            winter_start = DEFAULT_WINTER_START_MONTH
-            winter_end = DEFAULT_WINTER_END_MONTH
-
-        # Winter spans across year boundary if start > end (e.g., Oct-April)
-        if winter_start > winter_end:
-            # e.g., Oct (10) - Apr (4): month >= 10 OR month <= 4
-            if month >= winter_start or month <= winter_end:
-                return "winter"
-            else:
-                return "summer"
-        else:
-            # e.g., Dec (12) - Feb (2): month >= 12 OR month <= 2 (edge case)
-            if month >= winter_start and month <= winter_end:
-                return "winter"
-            else:
-                return "summer"
-
-    def _check_system_level_gating(self) -> tuple[bool, bool, str]:
-        """
-        Check system-level AC/heat gating based on season + weather + interior aggregate temp.
-
-        v0.2.19: AC and heat activation is now determined at system level, not zone level.
-        Uses configurable season dates and gating thresholds.
-
-        Returns:
-            tuple of (allow_cool, allow_heat, reasoning)
-
-            allow_cool: True if AC is allowed
-            allow_heat: True if heating is allowed
-            reasoning: Explanation of gating decision
-        """
-        calendar_season = self._determine_calendar_season()
-        outdoor_temp, _, _, _ = self._read_weather()
-        upstairs_avg = self._read_upstairs_average_temp()
-
-        # Thresholds from config (v0.2.19) with defaults
-        cool_exterior_threshold = self.system_config.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)
-        cool_interior_threshold = self.system_config.get("cool_interior_threshold", DEFAULT_COOL_INTERIOR_THRESHOLD)
-        heat_exterior_threshold = self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)
-        heat_interior_threshold = self.system_config.get("heat_interior_threshold", DEFAULT_HEAT_INTERIOR_THRESHOLD)
-
-        reasoning_parts = []
-
-        # If we can't read upstairs average, fall back to conservative OFF
-        if upstairs_avg is None:
-            reasoning_parts.append("Upstairs average temp unavailable (sensor not ready)")
-            return False, False, " | ".join(reasoning_parts)
-
-        reasoning_parts.append(f"Calendar: {calendar_season}")
-        reasoning_parts.append(f"Exterior: {outdoor_temp:.1f}°F")
-        reasoning_parts.append(f"Upstairs avg: {upstairs_avg:.1f}°F")
-
-        allow_cool = False
-        allow_heat = False
-
-        # Summer: AC allowed if exterior >= 70°F AND upstairs_avg >= 74°F
-        if calendar_season == "summer":
-            if outdoor_temp >= cool_exterior_threshold and upstairs_avg >= cool_interior_threshold:
-                allow_cool = True
-                reasoning_parts.append(f"Summer: AC ALLOWED (exterior {outdoor_temp:.1f}°F ≥ {cool_exterior_threshold}°F AND upstairs {upstairs_avg:.1f}°F ≥ {cool_interior_threshold}°F)")
-            else:
-                reasoning_parts.append(f"Summer: AC BLOCKED")
-                if outdoor_temp < cool_exterior_threshold:
-                    reasoning_parts.append(f"  (exterior {outdoor_temp:.1f}°F < {cool_exterior_threshold}°F)")
-                if upstairs_avg < cool_interior_threshold:
-                    reasoning_parts.append(f"  (upstairs {upstairs_avg:.1f}°F < {cool_interior_threshold}°F)")
-
-        # Winter: Heat allowed if exterior <= 60°F AND upstairs_avg <= 68°F
-        elif calendar_season == "winter":
-            if outdoor_temp <= heat_exterior_threshold and upstairs_avg <= heat_interior_threshold:
-                allow_heat = True
-                reasoning_parts.append(f"Winter: HEAT ALLOWED (exterior {outdoor_temp:.1f}°F ≤ {heat_exterior_threshold}°F AND upstairs {upstairs_avg:.1f}°F ≤ {heat_interior_threshold}°F)")
-            else:
-                reasoning_parts.append(f"Winter: HEAT BLOCKED")
-                if outdoor_temp > heat_exterior_threshold:
-                    reasoning_parts.append(f"  (exterior {outdoor_temp:.1f}°F > {heat_exterior_threshold}°F)")
-                if upstairs_avg > heat_interior_threshold:
-                    reasoning_parts.append(f"  (upstairs {upstairs_avg:.1f}°F > {heat_interior_threshold}°F)")
-
-        # Shoulder (neither summer nor winter) — system OFF
-        else:
-            reasoning_parts.append("Shoulder season: System OFF (fans available, no thermostat)")
-
-        return allow_cool, allow_heat, " | ".join(reasoning_parts)
+        if new_options != self._config_entry.options:
+            _LOGGER.info(f"Season changed to {new_season} — resetting {keys_to_reset} to config defaults")
+            self.hass.async_create_task(
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, options=new_options
+                )
+            )
+            # Also update in-memory value
+            for key in keys_to_reset:
+                base = self._config_entry.data.get(key, DEFAULT_AC_SETPOINT if key == "ac_setpoint" else DEFAULT_HEAT_SETPOINT)
+                self.system_config[key] = base
 
     async def _async_update_data(self) -> SystemDecision:
-        """Fetch zone decisions and compute system decision."""
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[_async_update_data] START\n")
-        # Dynamically discover zone coordinators (in case new zones were added since startup)
-        active_zones = [
-            self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        """Aggregate zone decisions and produce system thermostat command."""
+        # Dynamically discover zone coordinators
+        active_zone_coordinators = [
+            self.hass.data[DOMAIN][entry.entry_id]
             for entry in self.hass.config_entries.async_entries(DOMAIN)
             if entry.data.get("entry_type") == ENTRY_TYPE_ZONE
             and self.hass.data.get(DOMAIN, {}).get(entry.entry_id) is not None
         ]
-        self.zone_coordinators = [z for z in active_zones if z is not None]
-        _LOGGER.info(f"System coordinator update: found {len(self.zone_coordinators)} active zone(s)")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[SystemCoordinator._async_update_data] {len(self.zone_coordinators)} zones\n")
-            for z in self.zone_coordinators:
-                f.write(f"  - {z.zone_name}\n")
-            f.write(f"[INSIDE WITH] About to close first with block\n")
+        self.zone_coordinators = active_zone_coordinators
+        _LOGGER.debug(f"System update: {len(self.zone_coordinators)} zone(s)")
 
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[MARKER] About to start aggregation\n")
-
-        # Get all zone decisions (trigger zone coordinators)
-        zone_decisions = []
-        _LOGGER.info(f"System coordinator: aggregating decisions from {len(self.zone_coordinators)} zones")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[Aggregation] Processing {len(self.zone_coordinators)} zones\n")
-
+        # Refresh all zones
+        zone_decisions: list[ZoneDecision] = []
         for coord in self.zone_coordinators:
             try:
-                _LOGGER.debug(f"  Refreshing zone: {coord.zone_name}")
                 await coord.async_request_refresh()
-                decision = coord.last_decision
-                _LOGGER.debug(f"    refresh complete, last_decision: {decision}")
-
-                if decision:
-                    zone_decisions.append(decision)
-                    _LOGGER.info(f"    ✓ Added zone decision: {decision.status}")
-                    with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                        f.write(f"  {coord.zone_name}: status={decision.status}\n")
-                else:
-                    _LOGGER.warning(f"    ✗ Zone has no decision after refresh")
-                    with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                        f.write(f"  {coord.zone_name}: NO DECISION\n")
+                if coord.last_decision:
+                    zone_decisions.append(coord.last_decision)
             except Exception as e:
-                _LOGGER.error(f"Error updating zone {coord.zone_name}: {e}", exc_info=True)
-                with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                    f.write(f"  {coord.zone_name}: ERROR={e}\n")
+                _LOGGER.error(f"Error refreshing zone {coord.zone_name}: {e}", exc_info=True)
 
-        _LOGGER.info(f"System coordinator: collected {len(zone_decisions)} zone decisions")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[Aggregation] Collected {len(zone_decisions)} decisions\n")
-
-        # If no zone decisions, return safe idle (but set last_decision)
         if not zone_decisions:
-            decision = SystemDecision(
-                thermostat_hvac_mode="off",
-                thermostat_setpoint=None,
-                status="No zone data available",
-            )
+            decision = SystemDecision(thermostat_hvac_mode="off", status="No zone data available")
             self.last_decision = decision
-            _LOGGER.info("System coordinator: no valid zone data available")
-            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                f.write(f"[Aggregation] No zone decisions - returning idle\n")
             return decision
 
-        # Read system inputs
-        outdoor_temp, forecast_high, forecast_low, forecast_high_7day = self._read_weather()
-        forecast_low_7day = forecast_low  # Simplified
-        solar_w = self._read_solar()
-        sleep_posture = self._read_sleep_posture()
-        house_occupied, unoccupied_hours = self._read_house_occupancy()
-        windows_assumed_open = self._read_windows_assumed_open()
+        # Detect season and handle season transitions
+        current_season = self.determine_calendar_season()
+        if self._last_season and self._last_season != current_season:
+            self._reset_setpoints_for_season_change(current_season)
+        self._last_season = current_season
 
-        # Read configuration flags
+        # Read system inputs
+        outdoor_temp = self._read_outdoor_temp()
+        windows_assumed_open = self._read_windows_assumed_open()
         manual_override = self.system_config.get("manual_override", False)
         system_active = self.system_config.get("system_active", True)
-        season_override = self.system_config.get("season_override", "auto")
 
-        # Derive season from forecast
-        derived_season, self._season_state = derive_season(
-            forecast_high_7day,
-            forecast_low_7day,
-            self.system_config.get("summer_threshold", DEFAULT_SUMMER_THRESHOLD),
-            self.system_config.get("winter_threshold", DEFAULT_WINTER_THRESHOLD),
-            self._season_state,
-        )
-
-        # Build zone states for system decision (with occupancy for active zone calc)
+        # Build zone states for system decision
         zone_states = []
-        for coord, decision in zip(self.zone_coordinators, zone_decisions):
-            zone_state = ZoneState(
+        for coord in self.zone_coordinators:
+            zone_states.append(ZoneState(
                 zone_name=coord.zone_name,
                 floor=coord.zone_config.get("floor", ""),
                 temp=coord._read_temp(),
                 temp_trend=coord._calculate_trend(),
-                humidity=coord._read_humidity(),
                 fans_claimed=coord._read_fan_claims(),
                 window_open=coord._read_window_open(),
                 zone_occupied=coord._read_occupancy(),
-                current_mode=decision.mode,
-                is_primary_zone=decision.is_primary_zone,
                 windows_assumed_open=windows_assumed_open,
-                mode_age_min=0,
-            )
-            zone_states.append(zone_state)
+                zone_target_temp=float(coord.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
+            ))
 
         sys_state = SystemState(
             zone_states=zone_states,
             outdoor_temp=outdoor_temp,
-            forecast_high=forecast_high,
-            forecast_low=forecast_low,
-            forecast_high_7day_avg=forecast_high_7day,
-            forecast_low_7day_avg=forecast_low_7day,
-            solar_w=solar_w,
-            sleep_posture=sleep_posture,
-            house_occupied=house_occupied,
-            unoccupied_hours=unoccupied_hours,
+            season=current_season,
+            sleep_posture=self._read_sleep_posture(),
+            house_occupied=self._read_house_occupancy(),
             manual_override=manual_override,
             system_active=system_active,
-            hour_of_day=dt_util.now().hour,
-            season=derived_season,
-            season_override=season_override,
             windows_assumed_open=windows_assumed_open,
         )
 
         cfg = SystemConfig(
-            summer_threshold=self.system_config.get("summer_threshold", DEFAULT_SUMMER_THRESHOLD),
-            winter_threshold=self.system_config.get("winter_threshold", DEFAULT_WINTER_THRESHOLD),
-            ac_enabled=self.system_config.get("ac_enabled", True),
-            ac_setpoint=self.system_config.get("ac_setpoint", DEFAULT_AC_SETPOINT),
-            ac_trigger_solar_watts=self.system_config.get("ac_trigger_solar_watts", DEFAULT_AC_TRIGGER_SOLAR_WATTS),
-            ac_solar_window_start=self.system_config.get("ac_solar_window_start", DEFAULT_AC_SOLAR_WINDOW_START),
-            ac_solar_window_end=self.system_config.get("ac_solar_window_end", DEFAULT_AC_SOLAR_WINDOW_END),
-            ac_trigger_humidity=self.system_config.get("ac_trigger_humidity", DEFAULT_AC_TRIGGER_HUMIDITY),
-            heat_threshold=self.system_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD),
-            heat_setpoint=self.system_config.get("heat_setpoint", DEFAULT_HEAT_SETPOINT),
-            emergency_heat_threshold=self.system_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD),
-            setback_cool_temp=self.system_config.get("setback_cool_temp", DEFAULT_SETBACK_COOL_TEMP),
-            setback_heat_temp=self.system_config.get("setback_heat_temp", DEFAULT_SETBACK_HEAT_TEMP),
-            unoccupied_hours=self.system_config.get("unoccupied_hours", DEFAULT_UNOCCUPIED_HOURS),
-            return_home_cool_setpoint=self.system_config.get("return_home_cool_setpoint", DEFAULT_RETURN_HOME_COOL_SETPOINT),
-            return_home_heat_setpoint=self.system_config.get("return_home_heat_setpoint", DEFAULT_RETURN_HOME_HEAT_SETPOINT),
-            precool_trigger=self.system_config.get("precool_trigger", DEFAULT_PRECOOL_TRIGGER),
-            preheat_trigger=self.system_config.get("preheat_trigger", DEFAULT_PREHEAT_TRIGGER),
-            window_fan_speed=self.system_config.get("window_fan_speed", DEFAULT_WINDOW_FAN_SPEED),
-            passive_cooling_enabled=self.system_config.get("passive_cooling_enabled", DEFAULT_PASSIVE_COOLING_ENABLED),
-            passive_fan_threshold=self.system_config.get("passive_fan_threshold", 70.0),
-            escalate_enabled_downstairs_temp=self.system_config.get("escalate_enabled_downstairs_temp", 68.0),
-            escalate_enabled_upstairs_temp=self.system_config.get("escalate_enabled_upstairs_temp", 74.0),
+            ac_setpoint=self._effective_setpoint("ac_setpoint", DEFAULT_AC_SETPOINT),
+            heat_setpoint=self._effective_setpoint("heat_setpoint", DEFAULT_HEAT_SETPOINT),
+            heat_threshold=float(self.system_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD)),
+            emergency_heat_threshold=float(self.system_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD)),
+            cool_exterior_threshold=float(self.system_config.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)),
+            cool_interior_override_delta=float(self.system_config.get("cool_interior_override_delta", DEFAULT_COOL_INTERIOR_OVERRIDE_DELTA)),
+            heat_exterior_threshold=float(self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)),
         )
 
-        # Decide
         decision = decide_system(sys_state, zone_decisions, cfg)
         self.last_decision = decision
 
-        # Dispatch thermostat commands
-        await self._dispatch_thermostat(decision)
-        await self._dispatch_fans(decision, zone_decisions)
+        await self._dispatch_thermostat(decision, cfg)
+        await self._dispatch_fans(zone_decisions)
 
-        _LOGGER.debug(f"System decision: {decision.thermostat_hvac_mode} {decision.thermostat_setpoint}°F - {decision.status}")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[_async_update_data] decision={decision.status}\n")
-
+        _LOGGER.info(f"System: {decision.thermostat_hvac_mode} {decision.thermostat_setpoint or 'OFF'} — {decision.status}")
         return decision
 
-    def _check_any_window_open(self) -> bool:
-        """Check if any window is open (system-wide + per-zone)."""
-        # Check system windows sensor
-        windows_entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
-        state = self.hass.states.get(windows_entity)
-        if state and state.state == "on":
-            return True
-
-        # Check per-zone window sensors
-        for coord in self.zone_coordinators:
-            if coord._read_window_open():
-                return True
-
-        return False
-
-    async def _dispatch_thermostat(self, decision: SystemDecision):
-        """
-        Send thermostat commands.
-
-        v0.2.19: Applies system-level AC/heat gating based on season + weather + interior aggregate temp.
-        """
+    async def _dispatch_thermostat(self, decision: SystemDecision, cfg: SystemConfig) -> None:
+        """Send thermostat commands."""
         thermostat = self.system_config.get("thermostat_entity")
         if not thermostat:
             return
 
-        # Override: if ANY window open, no AC/heat
-        any_window_open = self._check_any_window_open()
-        if any_window_open:
-            _LOGGER.debug("Window(s) open — blocking AC/heat, enabling whole-house fan for passive ventilation")
+        mode = decision.thermostat_hvac_mode
+        setpoint = decision.thermostat_setpoint
+
+        if mode == "off":
             await self.hass.services.async_call(
-                "climate",
-                "set_hvac_mode",
-                {"entity_id": thermostat, "hvac_mode": "off"},
-            )
-            await self.hass.services.async_call(
-                "climate",
-                "set_fan_mode",
-                {"entity_id": thermostat, "fan_mode": "on"},
-            )
-            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                f.write(f"[_dispatch_thermostat] Window override: thermostat OFF\n")
-            return
-
-        # v0.2.19: System-level gating (season + weather + interior aggregate temp)
-        allow_cool, allow_heat, gating_reasoning = self._check_system_level_gating()
-        _LOGGER.info(f"System gating: allow_cool={allow_cool}, allow_heat={allow_heat} | {gating_reasoning}")
-        with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-            f.write(f"[_dispatch_thermostat] Gating: cool={allow_cool}, heat={allow_heat}\n")
-            f.write(f"  {gating_reasoning}\n")
-
-        # Apply gating: if mode is blocked by gating, force OFF
-        dispatch_mode = decision.thermostat_hvac_mode
-        dispatch_setpoint = decision.thermostat_setpoint
-
-        if dispatch_mode == "cool" and not allow_cool:
-            _LOGGER.info(f"System gating: AC blocked despite zone request. Reason: {gating_reasoning}")
-            dispatch_mode = "off"
-            dispatch_setpoint = None
-            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                f.write(f"[_dispatch_thermostat] AC blocked by gating\n")
-
-        elif dispatch_mode == "heat" and not allow_heat:
-            _LOGGER.info(f"System gating: Heat blocked despite zone request. Reason: {gating_reasoning}")
-            dispatch_mode = "off"
-            dispatch_setpoint = None
-            with open("/config/adaptive_hvac_coordinator.log", "a") as f:
-                f.write(f"[_dispatch_thermostat] Heat blocked by gating\n")
-
-        # Dispatch gated decision
-        if dispatch_mode == "off":
-            await self.hass.services.async_call(
-                "climate",
-                "set_hvac_mode",
+                "climate", "set_hvac_mode",
                 {"entity_id": thermostat, "hvac_mode": "off"},
             )
         else:
             await self.hass.services.async_call(
-                "climate",
-                "set_hvac_mode",
-                {"entity_id": thermostat, "hvac_mode": dispatch_mode},
+                "climate", "set_hvac_mode",
+                {"entity_id": thermostat, "hvac_mode": mode},
             )
-
-            if dispatch_setpoint:
+            if setpoint is not None:
+                self._last_integration_setpoint = setpoint
                 await self.hass.services.async_call(
-                    "climate",
-                    "set_temperature",
-                    {"entity_id": thermostat, "temperature": dispatch_setpoint},
+                    "climate", "set_temperature",
+                    {"entity_id": thermostat, "temperature": setpoint},
                 )
 
-        # Set whole-house fan mode
         await self.hass.services.async_call(
-            "climate",
-            "set_fan_mode",
+            "climate", "set_fan_mode",
             {"entity_id": thermostat, "fan_mode": decision.whole_house_fan_mode},
         )
 
-    async def _dispatch_fans(self, sys_decision: SystemDecision, zone_decisions: list[ZoneDecision]):
-        """Send fan commands for each zone."""
+    async def _dispatch_fans(self, zone_decisions: list[ZoneDecision]) -> None:
+        """Send fan speed commands from zone decisions."""
         for zone_decision in zone_decisions:
             for fan_entity, speed_pct in zone_decision.fan_commands.items():
                 if speed_pct is None:
-                    # Skip this fan
                     continue
-
                 if speed_pct == 0:
                     await self.hass.services.async_call(
-                        "fan",
-                        "turn_off",
-                        {"entity_id": fan_entity},
+                        "fan", "turn_off", {"entity_id": fan_entity},
                     )
                 else:
                     await self.hass.services.async_call(
-                        "fan",
-                        "turn_on",
+                        "fan", "turn_on",
                         {"entity_id": fan_entity, "percentage": speed_pct},
                     )
