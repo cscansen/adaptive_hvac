@@ -4,6 +4,13 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.1] - 2026-05-29
+
+### Fixed
+- `DataUpdateCoordinator` now receives `config_entry=` in both `SystemCoordinator` and `ZoneCoordinator` — required by HA 2026.x; without it `async_config_entry_first_refresh` raised `ConfigEntryError` and all system entities stayed unavailable
+- Zone entity IDs sanitized to strip apostrophes and other non-`[a-z0-9_]` characters — zone names like "Caleb's Office" previously produced invalid entity IDs
+- `async_create_task(async_update_entry(...))` TypeError in thermostat state change listener — `async_update_entry` is synchronous, called directly now
+
 ## [0.3.0] - 2026-05-29
 
 ### Breaking Changes

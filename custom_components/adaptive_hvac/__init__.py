@@ -46,7 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif entry_type == ENTRY_TYPE_ZONE:
             zone_name = entry.data.get("zone_name", "Zone")
             zone_config = {**entry.data, **entry.options}
-            coordinator = ZoneCoordinator(hass, zone_name, zone_config)
+            coordinator = ZoneCoordinator(hass, zone_name, zone_config, config_entry=entry)
             hass.data[DOMAIN][entry.entry_id] = coordinator
             await coordinator.async_config_entry_first_refresh()
             await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
