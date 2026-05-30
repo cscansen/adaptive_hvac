@@ -6,7 +6,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 - Sets the thermostat to **cool** when any room gets too warm, **heat** when any room gets too cold
 - Controls **ceiling fans per room** — on when the room is above your target temp, off when it's not
-- Respects **who owns what**: if you manually set a fan, the integration leaves it alone
+- Respects **who owns what**: if you manually set a fan, the integration leaves it alone until midnight
 - Lets you (or Tia) adjust the thermostat setpoint from the faceplate or app — it adopts your setting and keeps using it
 - Never turns the AC off on a cool-but-sunny day when it's 80°F inside (the bug that prompted this rewrite)
 
@@ -18,9 +18,10 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 - Room unoccupied → fan off regardless (occupancy never blocks the thermostat)
 
 **System (thermostat):**
-- Summer: run AC if any room needs it AND outdoor temp ≥ 60°F (or any room is 5°F above its target — the indoor override)
+- Summer: run AC if any room needs it AND outdoor temp ≥ exterior threshold (default 60°F, raise to 65–68°F for "windows open" weather) — or any room is 5°F above its target (indoor override bypasses the threshold)
+- Summer: AC also blocked if any zone's window sensor is open (actual contact sensor; emergencies bypass this)
 - Winter: run heat if any room needs it AND outdoor temp ≤ 60°F
-- All thresholds are configurable
+- All thresholds are configurable; exterior threshold is a live dashboard slider
 
 ## Installation
 
@@ -38,12 +39,11 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 |---------|---------|-------|
 | Thermostat | — | Required. Your `climate` entity |
 | Weather | — | Optional. Used for outdoor temp |
-| Windows sensor | `binary_sensor.windows_assumed_open` | Optional. Informational only — does not block AC |
 | Sleep posture | — | Optional. Tracked but not used for control |
 | Occupancy sensors | — | Optional. For future setback (not yet active) |
 | AC setpoint | 68°F | What to cool to |
-| Cool exterior threshold | 60°F | Don't AC if outdoor below this... |
-| Cool interior override | 5°F | ...unless any room is this many °F above its target |
+| Cool exterior threshold | 60°F | Don't AC if outdoor below this — raise to 65–68°F for "windows open" weather |
+| Cool interior override | 5°F | Bypass exterior threshold if any room is this many °F above its target |
 | Emergency cool threshold | 85°F | Always cool above this regardless of gating |
 | Heat setpoint | 68°F | What to heat to |
 | Heat threshold | 68°F | Zone temp that triggers a heat request |
@@ -59,7 +59,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | Zone name | — | Required. Used for entity naming |
 | Temperature sensors | — | Required. Averaged if multiple |
 | Humidity sensor | — | Optional |
-| Window sensor | — | Optional. Per-zone window |
+| Window sensor | — | Optional. When open, blocks AC system-wide (emergencies bypass) |
 | Occupancy sensor | — | Optional. Controls local fan only |
 | Fans | — | Fan entities this zone controls |
 | Zone target temp | 72°F | Fan on above this, fan off at/below |
@@ -79,6 +79,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | `switch.adaptive_hvac_active` | Enable/disable the integration |
 | `switch.adaptive_hvac_manual_override` | Pause all automation |
 | `number.adaptive_hvac_ac_setpoint` | AC setpoint (live adjustable) |
+| `number.adaptive_hvac_cool_exterior_threshold` | Outdoor temp below which AC is blocked (live adjustable, 40–80°F) |
 | `number.adaptive_hvac_heat_setpoint` | Heat setpoint (live adjustable) |
 | `number.adaptive_hvac_heat_threshold` | Heat trigger temp (live adjustable) |
 | `number.adaptive_hvac_emergency_cool_threshold` | Emergency cool threshold |
@@ -89,7 +90,20 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 |--------|-------------|
 | `sensor.{zone}_hvac_status` | Zone mode and current temp |
 | `sensor.{zone}_temp_trend` | Temperature trend (°F/hr) |
-| `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle (OFF = user controls fans) |
+| `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle (OFF = integration skips this zone entirely) |
+| `switch.adaptive_hvac_{zone}_fan_locked` | Fan lock — ON means user has claimed the fan; integration hands off until midnight |
+
+## Fan lock
+
+When a user manually turns on, adjusts, or turns off a ceiling fan, the integration detects the change (via `context.user_id`) and claims that zone's fans:
+
+- **Fan turned ON** — integration preserves your speed and won't override it
+- **Fan adjusted** — new speed stored, integration continues to leave it alone
+- **Fan turned OFF** — integration won't turn it back on (suppressed until midnight)
+- **Midnight** — all fan locks clear automatically; normal control resumes
+- **Manual release** — toggle `switch.adaptive_hvac_{zone}_fan_locked` OFF at any time to release immediately
+
+> **Physical switch presses** (wall dimmer, etc.) have no HA context — they are not detected and do not set the lock. The integration can still override a fan set via physical switch.
 
 ## Thermostat setpoint ownership
 
@@ -128,14 +142,14 @@ Temperature sensor is returning 0 or unavailable. Check the entity IDs configure
 
 **AC won't turn on even though it's hot**
 Check `sensor.adaptive_hvac_status` reasoning attribute. Common causes:
-- Outdoor temp below `cool_exterior_threshold` (60°F default) AND no room is 5°F above its target
+- Outdoor temp below `cool_exterior_threshold` AND no room is 5°F above its target
+- A zone's window sensor is reporting open
 - `switch.adaptive_hvac_active` is off
 - `switch.adaptive_hvac_manual_override` is on
-- `binary_sensor.windows_assumed_open` is on (informational only in v0.3.3+, does not block AC)
 
 **Fan not responding**
-- Check zone's auto-control switch is ON
-- Check if a fan lock (`input_boolean.fan_user_claimed_*`) is active for that fan
+- Check zone's auto-control switch (`switch.adaptive_hvac_{zone}_auto`) is ON
+- Check if the fan lock switch (`switch.adaptive_hvac_{zone}_fan_locked`) is ON — toggle it OFF to release
 
 ## License
 
