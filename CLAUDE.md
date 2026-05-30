@@ -21,10 +21,6 @@
 - germination_watering_program.json — germination watering automation (ID: germination_watering_program)
 - summer_watering_program.json — summer watering automation (ID: summer_watering_program)
 - mode_a_exit_al_sleep_mode.json — Mode A exit AL sleep mode automation (ID: 1771230477164)
-- hvac_cooling.json — cooling decision tree (ID: hvac_cooling)
-- hvac_heating_normal.json — heating triggers (ID: hvac_heating_normal)
-- hvac_setback_unoccupied.json — away setback (ID: hvac_setback_unoccupied)
-- hvac_sensor_failsafe.json — sensor monitoring (ID: hvac_sensor_failsafe)
 - garage_fan_door_ventilation.json — door ventilation automation (ID: garage_fan_door_ventilation)
 - All files in this directory are project context for Claude
 
@@ -87,33 +83,24 @@ Each yard camera exposes both a motion sensor and a person-detection sensor. Uni
 - Automations: `garage_atv_zone_off_independent`, `garage_atv_zone_restore`, `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_empty_audio_off`, `garage_fan_door_ventilation`
 
 ## Fan Lock System
-When a user manually turns on or adjusts a fan, that fan is "claimed" and HVAC automations will not override it until the user turns it off.
+Built natively into the Adaptive HVAC integration (v0.3.6+). Each zone gets a `switch.adaptive_hvac_<zone>_fan_locked` entity. No external automations or helpers required.
 
 ### How it works
-- `fan_lock_set_claimed` — fires when user (`context.user_id` set) turns on/adjusts a fan; sets flag + stores speed
-- `fan_lock_clear_claimed` — fires when any tracked fan turns off; clears flag unconditionally
-- `fan_lock_restore` — fires when an automation (`context.user_id = none`, `context.parent_id` set) changes a claimed fan; restores user's speed
+- User turns fan ON or adjusts speed → lock switch turns ON, speed stored in coordinator memory
+- User turns fan OFF → lock switch stays ON (speed=0) — integration won't turn it back on
+- **Midnight** → all zone fan locks clear automatically, normal control resumes
+- Manual release: toggle `switch.adaptive_hvac_<zone>_fan_locked` OFF at any time
 
-### Tracked fans and helpers
-| Fan | Claimed flag | Speed store |
-|---|---|---|
-| `fan.tia_office_ceiling_fan` | `input_boolean.fan_user_claimed_tia_office` | `input_number.fan_claimed_speed_tia_office` |
-| `fan.caleb_office_ceiling` | `input_boolean.fan_user_claimed_caleb_office` | `input_number.fan_claimed_speed_caleb_office` |
-| `fan.fan` (family room) | `input_boolean.fan_user_claimed_family_room` | `input_number.fan_claimed_speed_family_room` |
-| `fan.master_ceiling_fan` | `input_boolean.fan_user_claimed_master` | `input_number.fan_claimed_speed_master` |
-| `fan.living_room_ceiling_fan` | `input_boolean.fan_user_claimed_living_room` | — (HVAC only turns it off) |
-| `switch.garage_fans` | `input_boolean.fan_user_claimed_garage` | — (on/off switch) |
-
-### HVAC automations that respect the lock
-- `hvac_living_room_fan_comfort` — conditions on `fan_user_claimed_living_room = off`
-- `garage_fan_cooling_on` / `garage_fan_cooling_off` — condition on `fan_user_claimed_garage = off`
-- `hvac_cooling`, `hvac_equalization`, `hvac_season_transition`, `night_mode_master_bedroom_fan_control` — handled by `fan_lock_restore` counter-automation (YAML automations, not patchable via API)
+### Fan lock switches
+| Zone | Lock switch |
+|---|---|
+| Caleb's Office | `switch.adaptive_hvac_calebs_office_fan_locked` |
+| Tia's Office | `switch.adaptive_hvac_tias_office_fan_locked` |
+| Master Bedroom | `switch.adaptive_hvac_master_bedroom_fan_locked` |
+| Garage | `switch.adaptive_hvac_garage_fan_locked` |
 
 ### Known edge case
-Physical switch presses have no `context.user_id` and no `context.parent_id` — they bypass the claim system. HVAC can still override a fan set via physical switch.
-
-### Helpers defined in
-`/config/configuration.yaml` — `input_boolean` and `input_number` sections (SSH to edit, then `input_boolean.reload` + `input_number.reload` via API)
+Physical switch presses have no `context.user_id` — they bypass the claim system. HVAC can still override a fan set via physical switch.
 
 ## Master Suite Sleep System
 
@@ -153,7 +140,7 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ## HVAC System
 
-**Adaptive HVAC v0.3.3** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
+**Adaptive HVAC v0.3.6** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
 
 ### Architecture
 - **System entry** — owns the thermostat, reads weather, dispatches heat/cool/off
@@ -162,26 +149,28 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ### Decision logic
 - Zone: if `temp > zone_target_temp` → fan on (occupied only) + request cool; if `temp ≤ zone_target_temp` → fan off
-- System: cooling allowed if `outdoor ≥ cool_exterior_threshold` (60°F) OR any zone is 5°F+ above its target; heat allowed if `outdoor ≤ heat_exterior_threshold` (60°F)
+- System: cooling allowed if `outdoor ≥ cool_exterior_threshold` (default 60°F, currently set to 68°F) OR any zone is 5°F+ above its target; heat allowed if `outdoor ≤ heat_exterior_threshold` (60°F)
+- System: cooling blocked if any zone's window sensor is open (actual contact sensor); emergencies bypass this
 - Occupancy gates **local fans only** — thermostat decisions are never blocked by occupancy
+- User fan changes claim that zone's fans until midnight (see Fan Lock System)
 - User thermostat adjustments (faceplate/app) are adopted as the new seasonal setpoint and persisted to config entry options; reset on season change
 
-### Zones (v0.3.3)
-| Zone | Status sensor | Temp sensor | Auto switch |
-|------|--------------|-------------|-------------|
-| Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` |
-| Tia's Office | `sensor.tias_office_hvac_status` | `sensor.tias_office_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` |
-| Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.meter_pro_2689_temperature` | `switch.adaptive_hvac_master_bedroom_auto` |
-| Garage | `sensor.garage_hvac_status` | `sensor.garage_hygrometer_temperature` | `switch.adaptive_hvac_garage_auto` |
+### Zones (v0.3.6)
+| Zone | Status sensor | Temp sensor | Auto switch | Fan lock switch |
+|------|--------------|-------------|-------------|-----------------|
+| Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
+| Tia's Office | `sensor.tias_office_hvac_status` | `sensor.tias_office_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
+| Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.meter_pro_2689_temperature` | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
+| Garage | `sensor.garage_hvac_status` | `sensor.garage_hygrometer_temperature` | `switch.adaptive_hvac_garage_auto` | `switch.adaptive_hvac_garage_fan_locked` |
 
 ### Key entities
 - Thermostat: `climate.downstairs_thermostat`
 - System status: `sensor.adaptive_hvac_status` (state = status string, `reasoning` attribute = full decision tree)
 - Season: `sensor.adaptive_hvac_season`
 - Mode: `sensor.adaptive_hvac_mode`
-- Windows (informational only, does NOT block AC): `binary_sensor.windows_assumed_open_2` — on when outdoor 58–68°F
 - Active switch: `switch.adaptive_hvac_active`
 - Manual override: `switch.adaptive_hvac_manual_override`
+- Cool exterior threshold: `number.adaptive_hvac_cool_exterior_threshold` (currently 68°F — live dashboard slider)
 - Upstairs average: `sensor.upstairs_average_temperature` (Caleb + Tia + Master avg, in `templates.yaml`)
 
 ### Dashboard
