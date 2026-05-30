@@ -31,6 +31,7 @@ async def async_setup_entry(
         zone_name = entry.data.get("zone_name", "Zone")
         entities = [
             ZoneAutoControlSwitch(hass, coordinator, zone_name, entry),
+            FanLockedSwitch(coordinator, zone_name),
         ]
         async_add_entities(entities)
 
@@ -157,3 +158,44 @@ class ZoneAutoControlSwitch(RestoreEntity, SwitchEntity):
         self.async_write_ha_state()
         # Notify coordinator of state change for next evaluation
         await self.coordinator.async_refresh()
+
+
+class FanLockedSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Per-zone fan lock — ON means user has claimed the fan; integration hands off."""
+
+    def __init__(self, coordinator: ZoneCoordinator, zone_name: str):
+        super().__init__(coordinator)
+        import re
+        zone_slug = re.sub(r"[^a-z0-9_]", "", zone_name.lower().replace(" ", "_"))
+        self._attr_unique_id = f"{DOMAIN}_{zone_slug}_fan_locked"
+        self.entity_id = f"switch.{DOMAIN}_{zone_slug}_fan_locked"
+        self._attr_has_entity_name = True
+        self._attr_name = "Fan Locked"
+        self.zone_name = zone_name
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last_state := await self.async_get_last_state()) is not None:
+            self.coordinator._fan_locked = last_state.state == "on"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.fan_locked
+
+    @property
+    def icon(self) -> str:
+        return "mdi:fan-off" if self.is_on else "mdi:fan"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, f"zone_{self.zone_name}")},
+            "name": f"{self.zone_name} HVAC",
+            "via_device": (DOMAIN, "system"),
+        }
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.coordinator.set_fan_lock(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.coordinator.set_fan_lock(False)
