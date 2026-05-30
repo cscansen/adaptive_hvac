@@ -21,7 +21,7 @@ from .const import (
     DEFAULT_HEAT_SETPOINT,
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
-    DEFAULT_WINDOWS_SENSOR,
+
     DEFAULT_WINTER_START_MONTH,
     DEFAULT_WINTER_END_MONTH,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
@@ -145,11 +145,6 @@ class ZoneCoordinator(DataUpdateCoordinator):
             return state.state == "on"
         return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
-    def _read_windows_assumed_open(self) -> bool:
-        """Read global windows open sensor."""
-        state = self.hass.states.get(DEFAULT_WINDOWS_SENSOR)
-        return bool(state and state.state == "on")
-
     def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
         """Map placeholder zone_name keys to real fan entity IDs from fan_config."""
         mapped = {}
@@ -211,7 +206,6 @@ class ZoneCoordinator(DataUpdateCoordinator):
             window_open=self._read_window_open(),
             zone_occupied=self._read_occupancy(),
             current_mode=self.last_decision.mode if self.last_decision else "idle",
-            windows_assumed_open=self._read_windows_assumed_open(),
             zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
         )
 
@@ -362,14 +356,6 @@ class SystemCoordinator(DataUpdateCoordinator):
             return True
         return any(self.hass.states.is_state(e, "on") for e in entities)
 
-    def _read_windows_assumed_open(self) -> bool:
-        """Read global windows open sensor."""
-        entity = self.system_config.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)
-        if not entity:
-            return False
-        state = self.hass.states.get(entity)
-        return bool(state and state.state == "on")
-
     def _effective_setpoint(self, key: str, default: float) -> float:
         """Read setpoint: options override > system_config > const default."""
         if self._config_entry:
@@ -429,7 +415,6 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         # Read system inputs
         outdoor_temp = self._read_outdoor_temp()
-        windows_assumed_open = self._read_windows_assumed_open()
         manual_override = self.system_config.get("manual_override", False)
         system_active = self.system_config.get("system_active", True)
 
@@ -444,7 +429,6 @@ class SystemCoordinator(DataUpdateCoordinator):
                 fans_claimed=coord._read_fan_claims(),
                 window_open=coord._read_window_open(),
                 zone_occupied=coord._read_occupancy(),
-                windows_assumed_open=windows_assumed_open,
                 zone_target_temp=float(coord.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
             ))
 
@@ -456,7 +440,6 @@ class SystemCoordinator(DataUpdateCoordinator):
             house_occupied=self._read_house_occupancy(),
             manual_override=manual_override,
             system_active=system_active,
-            windows_assumed_open=windows_assumed_open,
         )
 
         cfg = SystemConfig(

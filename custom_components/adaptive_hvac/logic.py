@@ -16,7 +16,6 @@ class ZoneState:
     window_open: bool = False
     zone_occupied: bool = True
     current_mode: str = "idle"
-    windows_assumed_open: bool = False    # global windows sensor state
     zone_target_temp: float = 72.0       # fan trigger temp (°F)
 
 
@@ -30,7 +29,6 @@ class SystemState:
     house_occupied: bool = True
     manual_override: bool = False
     system_active: bool = True
-    windows_assumed_open: bool = False
 
 
 @dataclass
@@ -208,7 +206,6 @@ def decide_system(
 
     Gating rules:
     - Manual override / inactive → off
-    - Windows open (summer) → off, whole-house fan on
     - Emergency requests bypass all gating
     - Summer cooling: allowed if outdoor ≥ cool_exterior_threshold OR any zone is
       cool_interior_override_delta above its target

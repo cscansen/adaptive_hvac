@@ -61,9 +61,6 @@ DEFAULT_HEAT_EXTERIOR_THRESHOLD = 60.0   # °F
 DEFAULT_WINTER_START_MONTH = 10  # October
 DEFAULT_WINTER_END_MONTH = 4     # April
 
-# System — Windows
-DEFAULT_WINDOWS_SENSOR = "binary_sensor.windows_assumed_open"
-
 # System — Whole-house fan entity (thermostat fan mode)
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 
@@ -84,8 +81,6 @@ DEFAULT_AUTO_CONTROL_ENABLED = True
 # System — Identity & sensors
 CONF_THERMOSTAT = "thermostat_entity"
 CONF_WEATHER = "weather_entity"
-CONF_WINDOWS_ASSUMED_OPEN_SENSOR = "windows_assumed_open_sensor"
-
 # System — AC control
 CONF_AC_SETPOINT = "ac_setpoint"
 

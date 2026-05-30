@@ -16,7 +16,6 @@ from .const import (
     DEFAULT_HEAT_EXTERIOR_THRESHOLD,
     DEFAULT_WINTER_START_MONTH, DEFAULT_WINTER_END_MONTH,
     DEFAULT_ZONE_TARGET_TEMP, DEFAULT_FAN_SPEED,
-    DEFAULT_WINDOWS_SENSOR,
 )
 
 
@@ -112,9 +111,6 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="system_sensors",
             data_schema=vol.Schema({
-                vol.Optional("windows_assumed_open_sensor", default=DEFAULT_WINDOWS_SENSOR): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
-                ),
                 vol.Optional("sleep_posture_entity", default=""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="input_boolean")
                 ),
@@ -237,9 +233,6 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional("weather_entity", default=d.get("weather_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
-                ),
-                vol.Optional("windows_assumed_open_sensor", default=d.get("windows_assumed_open_sensor", DEFAULT_WINDOWS_SENSOR)): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="binary_sensor")
                 ),
                 vol.Optional("sleep_posture_entity", default=d.get("sleep_posture_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="input_boolean")
