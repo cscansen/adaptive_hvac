@@ -4,6 +4,12 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.4] - 2026-05-30
+
+### Added
+- AC is now blocked when any zone's configured window sensor reports open (actual contact/reed sensor, not the assumed-open estimate). Emergencies bypass this gate. Reasoning includes which zone's window triggered the block.
+- `number.adaptive_hvac_cool_exterior_threshold` entity — the outdoor temperature below which AC is blocked can now be adjusted live from the dashboard (default 60°F, range 40–80°F). Raise this to 65°F+ to match real "windows open" weather conditions.
+
 ## [0.3.3] - 2026-05-29
 
 ### Changed
