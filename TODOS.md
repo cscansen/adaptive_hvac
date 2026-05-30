@@ -48,6 +48,22 @@ Currently the summer watering window is enforced globally (trigger at 5:30am, re
 
 ---
 
+## Irrigation — Yard Middle Soil Sensor — IN PROGRESS
+
+`sensor.middle_yard_soil_humidity` is unavailable (physical sensor dead/offline). Yard Middle zone (`adaptive_irrigation`) was reading from it → `sensor.adaptive_irrigation_yard_middle_moisture: unknown`.
+
+**Fix applied:** Updated Yard Middle config entry options via `/api/config/config_entries/options/flow` to use `sensor.east_yard_soil_sensor_humidity` + `sensor.back_yard_soil_sensor_humidity` (average of East + West). Options are saved correctly in `core.config_entries`.
+
+**Current blocker:** After options flow triggered the update_listener reload, a subsequent call to `homeassistant/reload_config_entry` service caused a second HA-managed reload that left all Yard Middle entities `unavailable`. The update_listener path (our custom `async_reload_entry`) works; the HA service-managed reload fails silently (entities unavailable, entry state shows `loaded`).
+
+**Next steps:**
+- [ ] Trigger fresh reload via options change (trivial value change → revert) to use the working update_listener path — do NOT call `homeassistant/reload_config_entry` afterward
+- [ ] Verify `sensor.adaptive_irrigation_yard_middle_moisture` shows ~78% (avg of East 79% + West 77%)
+- [ ] Investigate root cause: why does HA-managed reload fail for Yard Middle but not East/West? Likely `async_config_entry_first_refresh()` timing issue — consider wrapping first_refresh exceptions in `async_setup_entry` with retry logic
+- [ ] Long-term: replace unavailable `sensor.middle_yard_soil_humidity` with a template sensor that computes E+W average, so the zone has a "real" sensor entity (allows removing the multi-sensor workaround)
+
+---
+
 ## Irrigation — East Sensor Staleness — PENDING
 
 East yard soil sensor (`sensor.east_yard_soil_sensor_humidity`) stopped reporting overnight (last update ~11pm MDT), causing the 5:30am automation to see it as stale and fall back to a 6-minute survival dose. Sensor hardware is fine; Zigbee integration dropped the connection.

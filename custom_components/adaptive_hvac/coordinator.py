@@ -313,9 +313,24 @@ class SystemCoordinator(DataUpdateCoordinator):
         )
         self.system_config[key] = new_setpoint
 
+        # Persist to options without firing the update_listener (which would trigger a
+        # full config-entry reload and leave entities unavailable). We write directly
+        # to the storage file; the value is picked up on the next HA restart.
         if self._config_entry:
-            new_options = {**self._config_entry.options, key: new_setpoint}
-            self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+            import json as _json
+            try:
+                path = self.hass.config.config_dir + "/.storage/core.config_entries"
+                with open(path, "r") as f:
+                    store = _json.load(f)
+                for e in store["data"]["entries"]:
+                    if e.get("entry_id") == self._config_entry.entry_id:
+                        e.setdefault("options", {})[key] = new_setpoint
+                        break
+                with open(path, "w") as f:
+                    _json.dump(store, f, indent=2)
+                _LOGGER.debug(f"Persisted {key}={new_setpoint} to config_entries storage")
+            except Exception as exc:
+                _LOGGER.warning(f"Failed to persist {key} to storage: {exc}")
 
     def _read_outdoor_temp(self) -> float:
         """Read current outdoor temperature from weather entity."""
