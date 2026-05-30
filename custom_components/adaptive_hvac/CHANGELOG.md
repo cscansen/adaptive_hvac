@@ -4,6 +4,27 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.6] - 2026-05-30
+
+### Added
+- Native fan lock per zone: `switch.adaptive_hvac_<zone>_fan_locked`. When a user manually turns on, adjusts, or turns off a ceiling fan, the integration claims it and stops overriding it. Releases at midnight.
+- Fan off suppression: if a user turns the fan off, the integration won't turn it back on until midnight.
+- Manual release: turn the fan locked switch OFF at any time to immediately hand control back.
+
+### Changed
+- Fan lock is now handled entirely inside the integration — external `fan_lock_set_claimed`, `fan_lock_clear_claimed`, `fan_lock_restore` automations and all `input_boolean.fan_user_claimed_*` / `input_number.fan_claimed_speed_*` helpers can be removed.
+- `_map_fan_commands` simplified: removed the unused `fan_config` code path.
+
+### Removed
+- `CONF_FAN_CONFIG` constant (dead code).
+
+## [0.3.5] - 2026-05-30
+
+### Removed
+- `binary_sensor.windows_assumed_open_2` template sensor — replaced by actual window sensors on zones + configurable exterior threshold.
+- `windows_assumed_open_sensor` config option from system setup and options flow.
+- `windows_assumed_open` field from `ZoneState` and `SystemState`.
+
 ## [0.3.4] - 2026-05-30
 
 ### Added

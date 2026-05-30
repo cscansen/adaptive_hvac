@@ -5,7 +5,7 @@ from typing import Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, ENTRY_TYPE_SYSTEM, ENTRY_TYPE_ZONE
@@ -49,6 +49,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator = ZoneCoordinator(hass, zone_name, zone_config, config_entry=entry)
             hass.data[DOMAIN][entry.entry_id] = coordinator
             await coordinator.async_config_entry_first_refresh()
+
+            # Fan lock: listen for user-initiated changes on zone fans
+            fans = zone_config.get("fans", [])
+            if fans:
+                unsub = async_track_state_change_event(hass, fans, coordinator._handle_fan_change)
+                entry.async_on_unload(unsub)
+
+            # Fan lock: midnight reset
+            unsub = async_track_time_change(hass, coordinator._midnight_reset, hour=0, minute=0, second=0)
+            entry.async_on_unload(unsub)
+
             await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
 
         entry.async_on_unload(entry.add_update_listener(async_reload_entry))

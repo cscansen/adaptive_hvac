@@ -117,9 +117,6 @@ CONF_ZONE_OCCUPANCY = "zone_occupancy_sensor"
 CONF_ZONE_TARGET_TEMP = "zone_target_temp"
 CONF_FAN_SPEED = "fan_speed"
 
-# Zone — Fan configuration (for fan lock integration)
-CONF_FAN_CONFIG = "fan_config"
-
 # Attributes
 ATTR_STATUS = "status"
 ATTR_MODE = "mode"

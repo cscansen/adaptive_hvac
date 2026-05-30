@@ -8,6 +8,7 @@ from collections import deque
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -69,6 +70,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
         self._temp_samples: deque[float] = deque(maxlen=30)
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
+        self._fan_locked: bool = False
+        self._fan_claimed_speed: Optional[int] = None  # None=unclaimed, 0=user off, >0=user speed
 
     def _read_temp(self) -> float:
         """Read and average zone temperature sensors."""
@@ -127,14 +130,49 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
         return any(self.hass.states.is_state(e, "on") for e in entities)
 
+    @property
+    def fan_locked(self) -> bool:
+        return self._fan_locked
+
+    def set_fan_lock(self, locked: bool) -> None:
+        self._fan_locked = locked
+        if not locked:
+            self._fan_claimed_speed = None
+        self.async_set_updated_data(self.last_decision)
+        self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_fan_change(self, event) -> None:
+        """Claim fan lock when user manually changes a fan in this zone."""
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.context.user_id is None:
+            return
+        if new_state.state == "off":
+            self._fan_locked = True
+            self._fan_claimed_speed = 0
+        else:
+            speed = new_state.attributes.get("percentage")
+            self._fan_locked = True
+            self._fan_claimed_speed = int(speed) if speed is not None else int(self.zone_config.get("fan_speed", DEFAULT_FAN_SPEED))
+        _LOGGER.debug(f"Zone {self.zone_name}: fan claimed by user (speed={self._fan_claimed_speed})")
+        self.async_set_updated_data(self.last_decision)
+
+    @callback
+    def _midnight_reset(self, now) -> None:
+        """Release fan lock at midnight so integration resumes normal control."""
+        if self._fan_locked:
+            _LOGGER.info(f"Zone {self.zone_name}: midnight reset — releasing fan lock")
+            self._fan_locked = False
+            self._fan_claimed_speed = None
+            self.async_set_updated_data(self.last_decision)
+            self.hass.async_create_task(self.async_request_refresh())
+
     def _read_fan_claims(self) -> set[str]:
-        """Return set of claimed fan entity IDs (checked via fan_lock_entity flags)."""
-        claimed = set()
-        for fan_entry in self.zone_config.get("fan_config", []):
-            lock_entity = fan_entry.get("fan_lock_entity")
-            if lock_entity and self.hass.states.is_state(lock_entity, "on"):
-                claimed.add(fan_entry.get("fan_id"))
-        return claimed
+        """Return non-empty set when user has claimed this zone's fans."""
+        if self._fan_locked:
+            fans = self.zone_config.get("fans", [])
+            return set(fans) if fans else {"claimed"}
+        return set()
 
     def _read_auto_control_enabled(self) -> bool:
         """Check if zone auto-control switch is on."""
@@ -146,32 +184,16 @@ class ZoneCoordinator(DataUpdateCoordinator):
         return self.zone_config.get("auto_control_enabled", DEFAULT_AUTO_CONTROL_ENABLED)
 
     def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
-        """Map placeholder zone_name keys to real fan entity IDs from fan_config."""
-        mapped = {}
-        fans_claimed = self._read_fan_claims()
-
-        for fan_entry in self.zone_config.get("fan_config", []):
-            fan_id = fan_entry.get("fan_id")
-            fan_entity = fan_entry.get("fan_entity")
-
-            if not fan_entity or fan_id in fans_claimed:
-                continue
-
-            if fan_id in fan_commands:
-                speed = fan_commands[fan_id]
-                if speed is not None:
-                    mapped[fan_entity] = speed
-
-        # If fan_config is not set but fans list is, use zone_name key directly mapped to fans list
-        if not self.zone_config.get("fan_config"):
-            fans = self.zone_config.get("fans", [])
-            if fans and self.zone_name in fan_commands:
-                speed = fan_commands[self.zone_name]
-                if speed is not None:
-                    for fan_entity in fans:
-                        mapped[fan_entity] = speed
-
-        return mapped
+        """Map zone_name-keyed commands to actual fan entity IDs."""
+        if self._fan_locked:
+            return {}
+        fans = self.zone_config.get("fans", [])
+        if not fans or self.zone_name not in fan_commands:
+            return {}
+        speed = fan_commands[self.zone_name]
+        if speed is None:
+            return {}
+        return {fan_entity: speed for fan_entity in fans}
 
     def _calculate_trend(self) -> float:
         """Calculate temperature trend in °F/hr over 30-min window (linear regression)."""
