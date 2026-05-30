@@ -258,6 +258,19 @@ def decide_system(
             reasoning=reasoning,
         )
 
+    # Window open gate — block cooling if any zone reports a window open
+    if season == "summer":
+        open_zones = [z.zone_name for z in sys_state.zone_states if z.window_open]
+        if open_zones:
+            zone_list = ", ".join(open_zones)
+            reasoning.append(f"AC BLOCKED: window open in {zone_list}")
+            return SystemDecision(
+                thermostat_hvac_mode="off",
+                season=season,
+                status=f"SYSTEM: OFF (window open — {zone_list})",
+                reasoning=reasoning,
+            )
+
     # Collect zone requests
     cooling_zones = [d for d in zone_decisions if d.thermal_request == "cool"]
     heating_zones = [d for d in zone_decisions if d.thermal_request == "heat"]

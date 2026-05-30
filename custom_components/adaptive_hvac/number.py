@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_HEAT_THRESHOLD,
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
+    DEFAULT_COOL_EXTERIOR_THRESHOLD,
 )
 from .coordinator import SystemCoordinator
 
@@ -36,6 +37,7 @@ async def async_setup_entry(
         HeatThresholdNumber(coordinator),
         EmergencyHeatThresholdNumber(coordinator),
         EmergencyCoolThresholdNumber(coordinator),
+        CoolExteriorThresholdNumber(coordinator),
     ])
 
 
@@ -129,4 +131,19 @@ class EmergencyCoolThresholdNumber(_BaseSystemNumber):
         self._attr_native_unit_of_measurement = "°F"
         self._attr_native_min_value = 78.0
         self._attr_native_max_value = 110.0
+        self._attr_native_step = 1.0
+
+
+class CoolExteriorThresholdNumber(_BaseSystemNumber):
+    """Minimum outdoor temp for AC to run (below this = AC blocked unless interior override)."""
+    _config_key = "cool_exterior_threshold"
+    _default = DEFAULT_COOL_EXTERIOR_THRESHOLD
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_cool_exterior_threshold"
+        self._attr_name = "Adaptive HVAC Cool Exterior Threshold"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 40.0
+        self._attr_native_max_value = 80.0
         self._attr_native_step = 1.0
