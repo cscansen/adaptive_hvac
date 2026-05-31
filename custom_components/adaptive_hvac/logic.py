@@ -12,7 +12,7 @@ class ZoneState:
     temp: float                           # °F, averaged across sensors
     temp_trend: float                     # °F/hr over 30-min window
     humidity: Optional[float] = None
-    fans_claimed: set[str] = field(default_factory=set)  # entity IDs user claimed
+    fan_locked: bool = False
     window_open: bool = False
     zone_occupied: bool = True
     current_mode: str = "idle"
@@ -125,7 +125,7 @@ def decide_zone(
     # Emergency cooling — bypass all gating
     if zone.temp >= cfg.emergency_cool_threshold:
         reasoning.append(f"Temp {zone.temp:.1f}°F ≥ emergency {cfg.emergency_cool_threshold:.1f}°F")
-        fan_cmds = {} if zone.fans_claimed else {zone.zone_name: 100}
+        fan_cmds = {} if zone.fan_locked else {zone.zone_name: 100}
         return ZoneDecision(
             mode="emergency_cooling",
             zone_name=zone.zone_name,
@@ -151,9 +151,9 @@ def decide_zone(
     # Above zone target: request cooling always; local fan only if occupied
     if zone.temp > cfg.zone_target_temp:
         reasoning.append(f"Temp {zone.temp:.1f}°F > target {cfg.zone_target_temp:.1f}°F")
-        if zone.fans_claimed:
+        if zone.fan_locked:
             fan_cmds = {}
-            reasoning.append("Fan claimed by user — not touching")
+            reasoning.append("Fan locked by user — not touching")
         elif zone.zone_occupied:
             fan_cmds = {zone.zone_name: cfg.fan_speed}
         else:
@@ -184,7 +184,7 @@ def decide_zone(
 
     # Comfortable: fan off
     reasoning.append(f"Comfortable: temp {zone.temp:.1f}°F ≤ target {cfg.zone_target_temp:.1f}°F")
-    fan_cmds = {} if zone.fans_claimed else {zone.zone_name: 0}
+    fan_cmds = {} if zone.fan_locked else {zone.zone_name: 0}
     return ZoneDecision(
         mode="idle",
         zone_name=zone.zone_name,

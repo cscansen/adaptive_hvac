@@ -4,6 +4,11 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.7] - 2026-05-31
+
+### Changed
+- Simplified fan lock internals: replaced `fans_claimed: set[str]` with `fan_locked: bool` in `ZoneState`; removed unused `_fan_claimed_speed` and `_read_fan_claims()`. No behavior change.
+
 ## [0.3.6] - 2026-05-30
 
 ### Added

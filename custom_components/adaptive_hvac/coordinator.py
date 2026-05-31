@@ -71,7 +71,6 @@ class ZoneCoordinator(DataUpdateCoordinator):
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
         self._fan_locked: bool = False
-        self._fan_claimed_speed: Optional[int] = None  # None=unclaimed, 0=user off, >0=user speed
 
     def _read_temp(self) -> float:
         """Read and average zone temperature sensors."""
@@ -136,25 +135,17 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
     def set_fan_lock(self, locked: bool) -> None:
         self._fan_locked = locked
-        if not locked:
-            self._fan_claimed_speed = None
         self.async_set_updated_data(self.last_decision)
         self.hass.async_create_task(self.async_request_refresh())
 
     @callback
     def _handle_fan_change(self, event) -> None:
-        """Claim fan lock when user manually changes a fan in this zone."""
+        """Lock fan when user manually changes a fan in this zone."""
         new_state = event.data.get("new_state")
         if new_state is None or new_state.context.user_id is None:
             return
-        if new_state.state == "off":
-            self._fan_locked = True
-            self._fan_claimed_speed = 0
-        else:
-            speed = new_state.attributes.get("percentage")
-            self._fan_locked = True
-            self._fan_claimed_speed = int(speed) if speed is not None else int(self.zone_config.get("fan_speed", DEFAULT_FAN_SPEED))
-        _LOGGER.debug(f"Zone {self.zone_name}: fan claimed by user (speed={self._fan_claimed_speed})")
+        self._fan_locked = True
+        _LOGGER.debug(f"Zone {self.zone_name}: fan locked by user")
         self.async_set_updated_data(self.last_decision)
 
     @callback
@@ -163,16 +154,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
         if self._fan_locked:
             _LOGGER.info(f"Zone {self.zone_name}: midnight reset — releasing fan lock")
             self._fan_locked = False
-            self._fan_claimed_speed = None
             self.async_set_updated_data(self.last_decision)
             self.hass.async_create_task(self.async_request_refresh())
-
-    def _read_fan_claims(self) -> set[str]:
-        """Return non-empty set when user has claimed this zone's fans."""
-        if self._fan_locked:
-            fans = self.zone_config.get("fans", [])
-            return set(fans) if fans else {"claimed"}
-        return set()
 
     def _read_auto_control_enabled(self) -> bool:
         """Check if zone auto-control switch is on."""
@@ -224,7 +207,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
             temp=temp,
             temp_trend=self._calculate_trend(),
             humidity=self._read_humidity(),
-            fans_claimed=self._read_fan_claims(),
+            fan_locked=self._fan_locked,
             window_open=self._read_window_open(),
             zone_occupied=self._read_occupancy(),
             current_mode=self.last_decision.mode if self.last_decision else "idle",
@@ -448,7 +431,7 @@ class SystemCoordinator(DataUpdateCoordinator):
                 floor=coord.zone_config.get("floor", ""),
                 temp=coord._read_temp(),
                 temp_trend=coord._calculate_trend(),
-                fans_claimed=coord._read_fan_claims(),
+                fan_locked=coord._fan_locked,
                 window_open=coord._read_window_open(),
                 zone_occupied=coord._read_occupancy(),
                 zone_target_temp=float(coord.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
