@@ -30,7 +30,7 @@
 
 ## Audio Zone System
 
-**Dynamic Central Audio (DCA)** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
+**Dynamic Central Audio (DCA) v0.3.7** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
 
 ### Zones
 | Zone | Status sensor | Follow-Me switch | Volume offset |
@@ -99,6 +99,27 @@ Built natively into the Adaptive HVAC integration (v0.3.6+). Each zone gets a `s
 
 ### Known edge case
 Physical switch presses have no `context.user_id` — they bypass the claim system. HVAC can still override a fan set via physical switch.
+
+## Master Bathroom Lights
+
+- Dimmer: `light.master_bath_dimmer` — physical switch
+- LEDs: `light.led_underlights` — 0-10V strip
+- Always in sync via bidirectional pair: **Dimmer drives 0-10V** (ID: 1767225558095) + **0-10V reflects to dimmer** (ID: 1767248157121). Uses `input_boolean.master_bath_dimmer_sync` as mutex. Physical switch use propagates unconditionally — no block conditions on the sync pair.
+- Occupancy automation: **Master Bath - Underlights (Occupancy + Lux)** (ID: 1771288057410, `automations/other/master_bath_underlights_occupancy_lux.json`)
+  - Turns on when occupied 2s + NOT both in bed + (sun down OR daytime lux < 300)
+  - Lux threshold 300 chosen from sensor data: cloudy days peak ~130 lux; sunny afternoons run 400–800+ lux
+  - Turns off after 2 min unoccupied
+  - Block condition: `binary_sensor.master_bed_both_in_bed = on` — suppresses mmWave-triggered turn-on while both are asleep; either person out of bed lifts the block
+
+## Master Bedroom Lights
+
+- Lights: `light.master_bedroom_manual_lights`, `light.master_bedroom_nightstands`
+- Under-bed: `light.master_under_bed_light` — night-motion only (see Under Bed Night Motion below)
+- **Occupancy automation** (ID: 1768187945725, `automations/other/master_bedroom_occupancy_lights.json`):
+  - ON when occupied + sleep posture off + no one in bed + (sun down OR bathroom lux < 300)
+  - Uses `sensor.master_bathroom_illuminance` as daytime lux gate — bedroom FP2 light sensor caps at 9 lx and is unusable for daylight detection
+  - OFF after 5 min unoccupied
+- **Under Bed Night Motion** (ID: 1769916429783): fires only when sleep posture ON; turns on when occupied + not both in bed; off after 30s unoccupied
 
 ## Master Suite Sleep System
 
