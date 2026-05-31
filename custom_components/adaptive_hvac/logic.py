@@ -122,10 +122,10 @@ def decide_zone(
             reasoning=["Temp reading invalid"],
         )
 
-    # Emergency cooling — bypass all gating
+    # Emergency cooling — bypass all gating, including fan lock
     if zone.temp >= cfg.emergency_cool_threshold:
         reasoning.append(f"Temp {zone.temp:.1f}°F ≥ emergency {cfg.emergency_cool_threshold:.1f}°F")
-        fan_cmds = {} if zone.fan_locked else {zone.zone_name: 100}
+        fan_cmds = {zone.zone_name: 100}
         return ZoneDecision(
             mode="emergency_cooling",
             zone_name=zone.zone_name,

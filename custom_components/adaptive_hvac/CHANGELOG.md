@@ -4,6 +4,15 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.8] - 2026-05-31
+
+### Fixed
+- **Emergency cooling now overrides fan lock** — fans always spin at 100% when a zone hits the emergency threshold (≥85°F), regardless of user fan lock state. Thermostat cooling request was going through already; now local fans do too.
+- **Fan lock state restored before first evaluation on HA restart** — platform setup now runs before `async_config_entry_first_refresh()` so `FanLockedSwitch` restores persisted lock state before the first coordinator cycle, preventing a spurious fan command on every restart.
+- **Setpoint adoption now persists correctly in-session** — replaced fragile direct disk write of `core.config_entries` with `config_entries.async_update_entry()`. Adopted setpoints are now effective immediately (not only after a restart) and are properly persisted. The resulting options-update event is suppressed so no entity reload is triggered.
+- **Eliminated None broadcast in fan lock methods** — `set_fan_lock`, `_handle_fan_change`, and `_midnight_reset` now guard against calling `async_set_updated_data(None)` before the first coordinator evaluation completes.
+- **Fan lock switch shows correct state immediately after HA restart** — `FanLockedSwitch.async_added_to_hass` now calls `async_write_ha_state()` after restoring persisted state, so the switch UI reflects the correct locked/unlocked state without waiting for the next coordinator tick.
+
 ## [0.3.7] - 2026-05-31
 
 ### Changed

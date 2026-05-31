@@ -135,7 +135,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
     def set_fan_lock(self, locked: bool) -> None:
         self._fan_locked = locked
-        self.async_set_updated_data(self.last_decision)
+        if self.last_decision is not None:
+            self.async_set_updated_data(self.last_decision)
         self.hass.async_create_task(self.async_request_refresh())
 
     @callback
@@ -146,7 +147,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
             return
         self._fan_locked = True
         _LOGGER.debug(f"Zone {self.zone_name}: fan locked by user")
-        self.async_set_updated_data(self.last_decision)
+        if self.last_decision is not None:
+            self.async_set_updated_data(self.last_decision)
 
     @callback
     def _midnight_reset(self, now) -> None:
@@ -154,7 +156,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
         if self._fan_locked:
             _LOGGER.info(f"Zone {self.zone_name}: midnight reset — releasing fan lock")
             self._fan_locked = False
-            self.async_set_updated_data(self.last_decision)
+            if self.last_decision is not None:
+                self.async_set_updated_data(self.last_decision)
             self.hass.async_create_task(self.async_request_refresh())
 
     def _read_auto_control_enabled(self) -> bool:
@@ -264,6 +267,7 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._config_entry = config_entry
         self._last_integration_setpoint: Optional[float] = None
         self._last_season: Optional[str] = None
+        self._suppress_setpoint_reload: bool = False
 
     def determine_calendar_season(self) -> str:
         """Determine season — respects manual override, otherwise calendar-based."""
@@ -312,24 +316,14 @@ class SystemCoordinator(DataUpdateCoordinator):
         )
         self.system_config[key] = new_setpoint
 
-        # Persist to options without firing the update_listener (which would trigger a
-        # full config-entry reload and leave entities unavailable). We write directly
-        # to the storage file; the value is picked up on the next HA restart.
+        # Persist via the HA options API so config_entry.options is updated in-memory
+        # immediately (not just on next restart). We suppress the resulting update_listener
+        # reload — a setpoint adoption doesn't require tearing down and rebuilding entities.
         if self._config_entry:
-            import json as _json
-            try:
-                path = self.hass.config.config_dir + "/.storage/core.config_entries"
-                with open(path, "r") as f:
-                    store = _json.load(f)
-                for e in store["data"]["entries"]:
-                    if e.get("entry_id") == self._config_entry.entry_id:
-                        e.setdefault("options", {})[key] = new_setpoint
-                        break
-                with open(path, "w") as f:
-                    _json.dump(store, f, indent=2)
-                _LOGGER.debug(f"Persisted {key}={new_setpoint} to config_entries storage")
-            except Exception as exc:
-                _LOGGER.warning(f"Failed to persist {key} to storage: {exc}")
+            new_options = {**self._config_entry.options, key: new_setpoint}
+            self._suppress_setpoint_reload = True
+            self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
+            _LOGGER.debug(f"Persisted {key}={new_setpoint} to config entry options")
 
     def _read_outdoor_temp(self) -> float:
         """Read current outdoor temperature from weather entity."""
