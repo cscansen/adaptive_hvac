@@ -30,7 +30,7 @@
 
 ## Audio Zone System
 
-**Dynamic Central Audio (DCA) v0.3.9** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
+**Dynamic Central Audio (DCA) v0.3.10** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
 
 ### Zones
 | Zone | Status sensor | Follow-Me switch | Volume offset |
