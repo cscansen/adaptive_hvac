@@ -15,9 +15,6 @@
 - Reload automations: `curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/automation/reload -H "Authorization: Bearer $HA_TOKEN"`
 
 ## Local Files
-- automations.json — exported automation states (refresh as needed)
-- speaker_zones_follow_updated.json — main indoor speaker zone follow automation (ID: 1768126562712)
-- outdoor_gazebo_zone_follow.json — outdoor gazebo zone automation (ID: outdoor_gazebo_zone_yard_person_presence)
 - germination_watering_program.json — germination watering automation (ID: germination_watering_program)
 - summer_watering_program.json — summer watering automation (ID: summer_watering_program)
 - mode_a_exit_al_sleep_mode.json — Mode A exit AL sleep mode automation (ID: 1771230477164)
@@ -28,33 +25,34 @@
 - For analysis/review: export to local JSON files first, then analyze
 - For real-time control: use MCP or direct API calls
 - Always source ~/.secrets before API calls
-- Automation JSON files use the format of speaker_zones_follow_updated.json; POST to /api/config/automation/config/<id> then reload
+- Automation JSON files use the format exported by GET /api/config/automation/config/<id>; POST back to same endpoint then reload
 - Lovelace named dashboard config (e.g. `dashboard-hvac`) is NOT accessible via REST API — use websocket: `{"type": "lovelace/config", "url_path": "dashboard-hvac"}` to read, `{"type": "lovelace/config/save", ...}` to write. See Python websockets pattern used in this project.
 
 ## Audio Zone System
 
-### Indoor Zones (managed by speaker_zones_follow_updated.json)
-- `media_player.main_floor` — auto flag: `input_boolean.auto_audio_main_floor` — occupancy: `binary_sensor.main_floor_common_area_occupied`
-- `media_player.second_floor` — auto flag: `input_boolean.auto_audio_second_floor` — occupancy: family_room + caleb/tia offices
-- `media_player.master_bedroom` — auto flag: `input_boolean.auto_audio_master_bedroom`
-- `media_player.garage` — auto flag: `input_boolean.auto_audio_garage` — amp: `switch.extra1`
+**Dynamic Central Audio (DCA)** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
 
-### Outdoor Zones (managed by outdoor_gazebo_zone_follow.json)
-- `media_player.gazebo` — auto flag: `input_boolean.auto_audio_gazebo` — presence: `binary_sensor.yard_gazebo_slider_person_detected`
-- `media_player.front_porch` — auto flag: `input_boolean.auto_audio_front_porch` — no presence automation yet
+### Zones
+| Zone | Status sensor | Follow-Me switch | Volume offset |
+|------|--------------|-----------------|---------------|
+| Main Floor | `sensor.dynamic_central_audio_main_floor_status` | `switch.dynamic_central_audio_main_floor_follow_me` | `number.dynamic_central_audio_main_floor_volume_offset` |
+| Family Room / Tia's Office | `sensor.dynamic_central_audio_family_room_and_tias_office_status` | `switch.dynamic_central_audio_family_room_and_tias_office_follow_me` | `number.dynamic_central_audio_family_room_and_tias_office_volume_offset` |
+| Master Bed & Bath | `sensor.dynamic_central_audio_master_bed_and_bath_status` | `switch.dynamic_central_audio_master_bed_and_bath_follow_me` | `number.dynamic_central_audio_master_bed_and_bath_volume_offset` |
+| Gazebo & Yard | `sensor.dynamic_central_audio_gazebo_and_yard_status` | `switch.dynamic_central_audio_gazebo_and_yard_follow_me` | `number.dynamic_central_audio_gazebo_and_yard_volume_offset` |
+| Garage | `sensor.dynamic_central_audio_garage_status` | `switch.dynamic_central_audio_garage_follow_me` | `number.dynamic_central_audio_garage_volume_offset` |
+| Front Porch | `sensor.dynamic_central_audio_front_porch_status` | `switch.dynamic_central_audio_front_porch_follow_me` | `number.dynamic_central_audio_front_porch_volume_offset` |
+| Garage Gym | `sensor.dynamic_central_audio_garage_gym_zone_status` | `switch.dynamic_central_audio_garage_gym_zone_follow_me` | `number.dynamic_central_audio_garage_gym_zone_volume_offset` |
 
-### Apple TV Zone Exclusion
-When the garage ATV plays, it always overrides the HTD zone (no AirPlay exception). Other ATVs drop their zone only when AirPlay is not active. Auto flag is restored when the ATV stops.
-- Garage ATV (`media_player.garage_apple_tv`) → disables `input_boolean.auto_audio_garage`, turns off `media_player.garage`, turns on `switch.extra1` (amp). Restores after 5min idle if still occupied; `garage_empty_audio_off` handles cleanup if garage empties first.
-- Tia's Office ATV (`media_player.tias_office_apple_tv`) OR Family Room ATV (`media_player.family_room_apple_tv`) → disables second floor zone; restores only when both stop
-- Master Bedroom ATV (`media_player.master_bedroom_apple_tv`) → disables master bedroom zone
-- Automations: `garage_atv_zone_off_independent`, `garage_atv_zone_restore`, `audio_zone_second_floor_atv_off`, `audio_zone_second_floor_atv_restore`, `audio_zone_master_bedroom_atv_off`, `audio_zone_master_bedroom_atv_restore`
+### Key entities
+- System status: `sensor.dynamic_central_audio_central_audio_status`
+- Active switch: `switch.dynamic_central_audio_central_audio_active`
+- AirPlay follow-me: `switch.dynamic_central_audio_central_audio_airplay_central_follow_me`
+- Apple TV follow-me: `switch.dynamic_central_audio_central_audio_apple_tv_living_room_follow_me`
 
-### Audio Routing
-- AirPlay source: `media_player.airplay_downstairs` (state must be 'playing')
-- Apple TV source: `media_player.living_room_apple_tv` + `input_boolean.living_room_appl_tv_audio_follow_me_mode` must be ON
-- Volume policy (auto zones only): `automation.speaker_zones_volume_policy_auto_only` (ID: 1768687730669) — AirPlay→80%, Apple TV→50%
-- Volume per zone stored in: `input_number.htd_vol_<zone>` (e.g. htd_vol_gazebo, htd_vol_front_porch)
+### Sources
+- AirPlay: `media_player.airplay_downstairs`
+- Apple TV: `media_player.living_room_apple_tv`
+- Volume per zone is set by DCA directly via `media_player.volume_set` using `base_volume + volume_offset` — no helper entities involved
 
 ### Camera Sensors (UniFi Protect)
 Each yard camera exposes both a motion sensor and a person-detection sensor. UniFi Protect does NOT expose per-camera motion zones as separate entities — zone granularity lives only inside the Protect app.
@@ -79,8 +77,8 @@ Each yard camera exposes both a motion sensor and a person-detection sensor. Uni
 - Temperature/humidity: `sensor.garage_hygrometer_temperature` / `sensor.garage_hygrometer_humidity`
 - Fan cooling automation: on after 2min presence + outdoor temp >80°F (`weather.forecast_home` temperature attribute); off after 15min mmWave empty
 - Fan door ventilation automation (`garage_fan_door_ventilation`): on when both bay doors open 5+ min + garage temp >60°F, 6am–9am only; off when both doors closed and garage empty
-- Audio off automation: `garage_empty_audio_off` — turns off ATV + amp + restores `auto_audio_garage` after 10min empty; condition: ATV playing OR amp on
-- Automations: `garage_atv_zone_off_independent`, `garage_atv_zone_restore`, `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_empty_audio_off`, `garage_fan_door_ventilation`
+- Audio off automation: `garage_empty_audio_off` — turns off ATV + amp after 10min empty; condition: ATV playing OR amp on
+- Automations: `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_empty_audio_off`, `garage_fan_door_ventilation`
 
 ## Fan Lock System
 Built natively into the Adaptive HVAC integration (v0.3.6+). Each zone gets a `switch.adaptive_hvac_<zone>_fan_locked` entity. No external automations or helpers required.
@@ -140,7 +138,7 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ## HVAC System
 
-**Adaptive HVAC v0.3.6** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
+**Adaptive HVAC v0.3.7** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
 
 ### Architecture
 - **System entry** — owns the thermostat, reads weather, dispatches heat/cool/off
@@ -155,7 +153,7 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 - User fan changes claim that zone's fans until midnight (see Fan Lock System)
 - User thermostat adjustments (faceplate/app) are adopted as the new seasonal setpoint and persisted to config entry options; reset on season change
 
-### Zones (v0.3.6)
+### Zones (v0.3.7)
 | Zone | Status sensor | Temp sensor | Auto switch | Fan lock switch |
 |------|--------------|-------------|-------------|-----------------|
 | Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
