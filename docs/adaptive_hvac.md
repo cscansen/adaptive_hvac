@@ -1,6 +1,6 @@
 # Adaptive HVAC Integration — Complete Reference
 
-**Version:** v0.3.7  
+**Version:** v0.3.8  
 **Source:** `/custom_components/adaptive_hvac/`  
 **Status:** Deployed, replaces old 13-automation YAML system
 
@@ -192,8 +192,75 @@ curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/homeassist
 
 | Version | Key change |
 |---------|-----------|
+| v0.3.8 | Five correctness fixes — see detail below |
 | v0.3.7 | Internal: simplified fan lock — replaced `fans_claimed` set with `fan_locked` bool, removed unused `_fan_claimed_speed` |
 | v0.3.6 | Native fan lock per zone (`switch.adaptive_hvac_{zone}_fan_locked`), midnight reset, removes all external fan lock automations/helpers |
 | v0.3.5 | Removed `windows_assumed_open` sensor and config option |
 | v0.3.4 | Per-zone window sensor AC gate + `number.adaptive_hvac_cool_exterior_threshold` entity |
 | v0.3.3 and earlier | See `CHANGELOG.md` |
+
+## v0.3.8 — Change log for incident diagnosis
+
+Five bugs were found by code review and fixed on 2026-05-31. If something broke after updating to v0.3.8, this section is your first stop.
+
+---
+
+### Fix 1 — Emergency cooling now overrides fan lock (`logic.py`)
+
+**What changed:** `decide_zone()` emergency cooling branch (`temp ≥ 85°F`) previously returned `fan_commands={}` when a zone's fan was locked. Now it always commands `fan_speed=100%` regardless of lock state.
+
+**Before:** User locks a fan → room hits 85°F → thermostat runs AC, but ceiling fan stays at whatever the user left it (or off). Functionally degraded cooling at the worst moment.
+
+**After:** Emergency threshold overrides the lock. Fans spin at 100%. Lock clears at midnight as normal.
+
+**If this causes a problem:** A user-locked fan spinning up unexpectedly during an emergency. To suppress: lower `emergency_cool_threshold` above any realistic room temp, or use `switch.adaptive_hvac_active` to pause the integration.
+
+---
+
+### Fix 2 — Platform setup order changed for zone entries (`__init__.py`)
+
+**What changed:** For zone config entries, `async_forward_entry_setups()` (which creates entities including `FanLockedSwitch`) now runs **before** `async_config_entry_first_refresh()`. Previously it was the reverse — entities were created after the first coordinator evaluation.
+
+**Before:** On every HA restart, the first evaluation ran with `_fan_locked=False` regardless of persisted state, potentially issuing a fan command that the lock was supposed to suppress.
+
+**After:** `FanLockedSwitch.async_added_to_hass` restores `_fan_locked` before the first evaluation runs.
+
+**If this causes a problem:** Entities may briefly show as unavailable at startup (coordinator has no data yet when entities first appear). They populate on the first refresh, which runs immediately after. If zone entities fail to load, check HA logs for `ConfigEntryNotReady` from the zone coordinator — that indicates a sensor read failure during first refresh, same as before.
+
+---
+
+### Fix 3 — Setpoint adoption uses HA options API (`coordinator.py`)
+
+**What changed:** `handle_thermostat_state_change()` previously wrote directly to the `core.config_entries` JSON file on disk to persist adopted setpoints. This left `config_entry.options` stale in memory for the rest of the session, so `_effective_setpoint()` was silently using the old value. Now it calls `hass.config_entries.async_update_entry()` which updates both the in-memory cache and the persisted storage correctly.
+
+A `_suppress_setpoint_reload` flag prevents the options-change event from triggering a full config-entry reload (which would have briefly made entities unavailable).
+
+**Before:** Adjusting the thermostat from the faceplate or app appeared to be adopted, but `_effective_setpoint()` returned the previous options value for the rest of the session. Only after an HA restart would the adopted value take effect.
+
+**After:** Adopted setpoints are effective immediately and persisted correctly.
+
+**If this causes a problem:** The suppress-reload flag is set to `True` before `async_update_entry` and cleared in the update listener. If the listener fires more than once (e.g., due to a race), only the first call is suppressed — subsequent calls trigger a normal reload. If setpoint adoption is causing unexpected reloads, check `_suppress_setpoint_reload` state in the coordinator.
+
+---
+
+### Fix 4 — Guard against `None` broadcast in fan lock methods (`coordinator.py`)
+
+**What changed:** `set_fan_lock()`, `_handle_fan_change()`, and `_midnight_reset()` now check `if self.last_decision is not None` before calling `async_set_updated_data(self.last_decision)`. Previously, if any of these fired before the first coordinator evaluation completed, `None` would be broadcast to all subscribers.
+
+**Before:** A switch restore, fan event, or (theoretically) a midnight reset at the exact moment of startup could push `None` as coordinator data, causing `AttributeError` in entity property accessors or making entities show unavailable.
+
+**After:** If `last_decision` is None, the immediate notify is skipped; `async_request_refresh()` still runs and will populate data correctly.
+
+**If this causes a problem:** If fan lock state changes aren't reflected immediately in the UI, it means `last_decision` was None at the time of the change and the refresh hasn't completed yet. This is a transient startup condition and self-resolves within one scan interval.
+
+---
+
+### Fix 5 — Fan lock switch shows correct state immediately after restart (`switch.py`)
+
+**What changed:** `FanLockedSwitch.async_added_to_hass()` now calls `self.async_write_ha_state()` after restoring `_fan_locked` from persisted state.
+
+**Before:** After HA restart, the fan lock switch UI showed the wrong state (off/False) for up to one full scan interval (3 minutes) even though the coordinator was correctly enforcing the lock.
+
+**After:** Switch reflects correct state immediately after entity setup completes.
+
+**If this causes a problem:** None expected — `async_write_ha_state()` is a standard HA pattern for RestoreEntity. If the switch flickers on startup, it's likely a coordinator data timing issue, not this change.
