@@ -48,7 +48,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             zone_config = {**entry.data, **entry.options}
             coordinator = ZoneCoordinator(hass, zone_name, zone_config, config_entry=entry)
             hass.data[DOMAIN][entry.entry_id] = coordinator
-            await coordinator.async_config_entry_first_refresh()
 
             # Fan lock: listen for user-initiated changes on zone fans
             fans = zone_config.get("fans", [])
@@ -60,9 +59,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             unsub = async_track_time_change(hass, coordinator._midnight_reset, hour=0, minute=0, second=0)
             entry.async_on_unload(unsub)
 
+            # Platform setup first — FanLockedSwitch.async_added_to_hass restores
+            # _fan_locked from persisted state before the first coordinator evaluation runs
             await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+            await coordinator.async_config_entry_first_refresh()
 
-        entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+        if entry_type == ENTRY_TYPE_SYSTEM:
+            # Wrap the reload listener so setpoint adoptions don't trigger a full reload
+            async def _options_updated(h: HomeAssistant, e: ConfigEntry) -> None:
+                coord = h.data.get(DOMAIN, {}).get(e.entry_id)
+                if coord is not None and getattr(coord, "_suppress_setpoint_reload", False):
+                    coord._suppress_setpoint_reload = False
+                    return
+                await async_reload_entry(h, e)
+            entry.async_on_unload(entry.add_update_listener(_options_updated))
+        else:
+            entry.async_on_unload(entry.add_update_listener(async_reload_entry))
         return True
 
     except Exception as e:

@@ -177,6 +177,7 @@ class FanLockedSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         await super().async_added_to_hass()
         if (last_state := await self.async_get_last_state()) is not None:
             self.coordinator._fan_locked = last_state.state == "on"
+            self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:
