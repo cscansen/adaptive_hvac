@@ -4,6 +4,21 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.22] - 2026-06-08
+
+### Added
+- **Zone status sensor now exposes configuration attributes** — `temp_sensors`, `fans`, `floor`,
+  `affects_thermostat`, and `zone_target_temp` are included in each zone's status sensor
+  attributes. This enables the dashboard generator to work via the HA REST API alone with no
+  SSH or file-system access to the HA host.
+- **Dashboard generator script** (`scripts/generate_dashboard.py`) — reads your live zone
+  configuration from HA and regenerates the full Lovelace dashboard automatically. Zones are
+  discovered from entity states; no manual configuration required. Supports file output (for
+  paste into Raw Config Editor) and SSH deploy. Re-run whenever zones are added or removed.
+- **DASHBOARD.md** — step-by-step setup guide for the dashboard generator, covering both
+  the no-SSH (copy-paste) and SSH deploy paths, plus the optional thermostat fan state
+  template sensor for the history graph.
+
 ## [0.3.21] - 2026-06-08
 
 ### Added
