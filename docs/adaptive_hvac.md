@@ -180,11 +180,11 @@ Physical wall switch presses are detected and set the fan lock (uses `context.pa
 
 ```bash
 # Force immediate evaluation
-source ~/.secrets && curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate \
+source ~/.secrets && curl -s -X POST http://<ha-host>:8123/api/services/adaptive_hvac/force_evaluate \
   -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
 
 # Read current decision + reasoning
-curl -s http://ha.iot.scansenconsulting.com:8123/api/states/sensor.adaptive_hvac_status \
+curl -s http://<ha-host>:8123/api/states/sensor.adaptive_hvac_status \
   -H "Authorization: Bearer $HA_TOKEN" | python3 -c "import json,sys; s=json.load(sys.stdin); print(s['state']); print(s['attributes'].get('reasoning'))"
 ```
 
@@ -193,16 +193,16 @@ curl -s http://ha.iot.scansenconsulting.com:8123/api/states/sensor.adaptive_hvac
 ```bash
 # HA SSH rejects SCP subsystem — use base64 tar instead
 source ~/.secrets
-tar czf - -C /mnt/nas/ai-workspace/homeassistant/custom_components adaptive_hvac \
+tar czf - -C /path/to/custom_components adaptive_hvac \
   | base64 \
-  | ssh -i ~/.ssh/infra hassio@192.168.255.247 \
+  | ssh -i ~/.ssh/infra <ha-user>@<ha-host-ip> \
     "base64 -d > /tmp/adaptive_hvac.tar.gz && \
      sudo tar xzf /tmp/adaptive_hvac.tar.gz -C /config/custom_components/ && \
      sudo rm -rf /config/custom_components/adaptive_hvac/__pycache__ && \
      echo deployed"
 
 # Full HA restart required for Python module changes (clears import cache)
-curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/homeassistant/restart \
+curl -s -X POST http://<ha-host>:8123/api/services/homeassistant/restart \
   -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
 ```
 
@@ -258,7 +258,7 @@ Update to v0.3.9+. Earlier versions required `context.user_id` which physical sw
 Normal for ~3 minutes — the system coordinator polls on a 3-minute cycle. Use Force Evaluate to trigger immediately:
 ```bash
 source ~/.secrets
-curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate \
+curl -s -X POST http://<ha-host>:8123/api/services/adaptive_hvac/force_evaluate \
   -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
 ```
 
@@ -266,7 +266,7 @@ curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_h
 Zone entries start `not_loaded` until the system entry loads and discovers them. After HA restarts, manually reload the system entry to cascade:
 ```bash
 source ~/.secrets
-curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/config/config_entries/entry/01KSTXRXHE88HHNRP8QS6CA3FS/reload \
+curl -s -X POST http://<ha-host>:8123/api/config/config_entries/entry/<system-entry-id>/reload \
   -H "Authorization: Bearer $HA_TOKEN"
 ```
 
