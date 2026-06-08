@@ -4,6 +4,17 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.19] - 2026-06-08
+
+### Fixed
+- **Temperature trend no longer shows thousands of °F/hr** — two bugs in `_calculate_trend()`:
+  1. Failsafe readings (0.0°F, returned when sensors are unavailable on startup) were being
+     stored in the sample history. When a real reading arrived (e.g. 72°F), the regression saw
+     a 0→72 jump and extrapolated to ~2160°F/hr. Invalid readings are now skipped.
+  2. The per-hour conversion used `× 60` (assumes 1 sample/minute) but the scan interval is
+     3 minutes — corrected to `× 20`. The history window was also 90 minutes (maxlen=30 at
+     3 min/sample); corrected to maxlen=10 for a true 30-minute window.
+
 ## [0.3.18] - 2026-06-08
 
 ### Fixed

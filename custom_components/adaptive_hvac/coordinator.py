@@ -71,7 +71,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
         )
         self.zone_name = zone_name
         self.zone_config = zone_config
-        self._temp_samples: deque[float] = deque(maxlen=30)
+        self._temp_samples: deque[float] = deque(maxlen=30 // SCAN_INTERVAL_MINUTES)  # 30-min window
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
         self._fan_locked: bool = False
@@ -206,12 +206,13 @@ class ZoneCoordinator(DataUpdateCoordinator):
         if denominator == 0:
             return 0.0
 
-        return (numerator / denominator) * 60  # convert per-minute slope to per-hour
+        return (numerator / denominator) * (60 / SCAN_INTERVAL_MINUTES)  # slope per-sample → per-hour
 
     async def _async_update_data(self) -> ZoneDecision:
         """Fetch zone state and compute zone decision."""
         temp = self._read_temp()
-        self._temp_samples.append(temp)
+        if 0 < temp < 200:  # only store valid readings; failsafe values corrupt the trend
+            self._temp_samples.append(temp)
 
         zone = ZoneState(
             zone_name=self.zone_name,
