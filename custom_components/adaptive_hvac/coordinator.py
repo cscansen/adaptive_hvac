@@ -279,6 +279,8 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._last_integration_setpoint: Optional[float] = None
         self._last_season: Optional[str] = None
         self._suppress_setpoint_reload: bool = False
+        self._failsafe_cycle_count: int = 0
+        self._degraded_mode: bool = False
 
     def determine_calendar_season(self) -> str:
         """Determine season — respects manual override, otherwise calendar-based."""
@@ -432,6 +434,50 @@ class SystemCoordinator(DataUpdateCoordinator):
             decision = SystemDecision(thermostat_hvac_mode="off", status="No zone data available")
             self.last_decision = decision
             return decision
+
+        # Degraded-mode detection: all zones in sensor failsafe for N consecutive cycles
+        all_failsafe = all(d.mode == "sensor_failsafe" for d in zone_decisions)
+        if all_failsafe:
+            self._failsafe_cycle_count += 1
+            if self._failsafe_cycle_count >= 2 and not self._degraded_mode:
+                self._degraded_mode = True
+                _LOGGER.warning("Adaptive HVAC: all zone sensors unavailable — handing thermostat back to auto")
+                thermostat = self.system_config.get("thermostat_entity")
+                if thermostat:
+                    try:
+                        await self.hass.services.async_call(
+                            "climate", "set_hvac_mode",
+                            {"entity_id": thermostat, "hvac_mode": "auto"},
+                        )
+                    except Exception:
+                        _LOGGER.warning("Adaptive HVAC: thermostat does not support 'auto' mode — leaving as-is")
+                await self.hass.services.async_call(
+                    "persistent_notification", "create", {
+                        "title": "Adaptive HVAC — Degraded",
+                        "message": (
+                            "All zone sensors have been unavailable for 2+ evaluation cycles. "
+                            "The thermostat has been returned to auto mode and will govern itself. "
+                            "Adaptive HVAC will resume automatically when sensors recover."
+                        ),
+                        "notification_id": "adaptive_hvac_degraded",
+                    }
+                )
+            decision = SystemDecision(
+                thermostat_hvac_mode="off",
+                status=f"SYSTEM: DEGRADED — all sensors unavailable ({self._failsafe_cycle_count} cycles)",
+                reasoning=[f"All zone sensors unavailable for {self._failsafe_cycle_count} cycle(s) — thermostat in auto"],
+            )
+            self.last_decision = decision
+            return decision
+        else:
+            if self._degraded_mode:
+                _LOGGER.info("Adaptive HVAC: zone sensors recovered — resuming normal control")
+                self._degraded_mode = False
+                await self.hass.services.async_call(
+                    "persistent_notification", "dismiss",
+                    {"notification_id": "adaptive_hvac_degraded"},
+                )
+            self._failsafe_cycle_count = 0
 
         # Detect season and handle season transitions
         current_season = self.determine_calendar_season()
