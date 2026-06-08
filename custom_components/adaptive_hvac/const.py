@@ -76,6 +76,9 @@ DEFAULT_UPSTAIRS_DEMAND_BOOST = 1.0  # °F
 DEFAULT_FAN_CIRCULATION_DELTA = 2.0  # °F
 CONF_FAN_CIRCULATION_DELTA = "fan_circulation_delta"
 
+# System — Sensor staleness: flag sensors that haven't reported within this window
+DEFAULT_SENSOR_STALENESS_MINUTES = 60  # minutes
+
 # System — Whole-house fan entity (thermostat fan mode)
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 
