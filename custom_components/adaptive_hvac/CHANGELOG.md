@@ -4,6 +4,18 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.16] - 2026-06-08
+
+### Added
+- **Floor-based whole-house fan circulation** — zones can now be assigned to an HA floor (via
+  Settings → Integrations → zone → Configure → Floor, using HA's native floor registry). When
+  any two floors differ by ≥ `fan_circulation_delta` (default 2°F), the thermostat fan is set
+  to `on` to circulate air and equalize temperatures without running the compressor or furnace.
+  Fan returns to `auto` when floors are within threshold. Works in both summer and winter.
+  Blocked during manual override and system inactive states.
+- **`number.adaptive_hvac_fan_circulation_delta`** — live-adjustable floor differential threshold
+  (0.5–5°F, step 0.5°F, default 2°F).
+
 ## [0.3.15] - 2026-06-07
 
 ### Fixed

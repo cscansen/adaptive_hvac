@@ -17,6 +17,7 @@ from .const import (
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
+    DEFAULT_FAN_CIRCULATION_DELTA,
 )
 from .coordinator import SystemCoordinator
 
@@ -40,6 +41,7 @@ async def async_setup_entry(
         EmergencyCoolThresholdNumber(coordinator),
         CoolExteriorThresholdNumber(coordinator),
         UpstairsDemandBoostNumber(coordinator),
+        FanCirculationDeltaNumber(coordinator),
     ])
 
 
@@ -175,4 +177,19 @@ class UpstairsDemandBoostNumber(_BaseSystemNumber):
         self._attr_native_unit_of_measurement = "°F"
         self._attr_native_min_value = 0.0
         self._attr_native_max_value = 2.0
+        self._attr_native_step = 0.5
+
+
+class FanCirculationDeltaNumber(_BaseSystemNumber):
+    """Floor temp differential that triggers whole-house fan circulation."""
+    _config_key = "fan_circulation_delta"
+    _default = DEFAULT_FAN_CIRCULATION_DELTA
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_fan_circulation_delta"
+        self._attr_name = "Adaptive HVAC Fan Circulation Delta"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 0.5
+        self._attr_native_max_value = 5.0
         self._attr_native_step = 0.5
