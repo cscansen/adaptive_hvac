@@ -13,7 +13,11 @@ MODE_SENSOR_FAILSAFE = "sensor_failsafe"
 MODE_EMERGENCY_COOLING = "emergency_cooling"
 MODE_EMERGENCY_HEATING = "emergency_heating"
 MODE_COOLING = "cooling"
+MODE_PASSIVE_COOLING = "passive_cooling"
+MODE_IDLE_WARM = "idle_warm"
 MODE_HEATING = "heating"
+MODE_PASSIVE_HEATING = "passive_heating"
+MODE_IDLE_COLD = "idle_cold"
 MODE_IDLE = "idle"
 
 ALL_MODES = [
@@ -23,7 +27,11 @@ ALL_MODES = [
     MODE_EMERGENCY_COOLING,
     MODE_EMERGENCY_HEATING,
     MODE_COOLING,
+    MODE_PASSIVE_COOLING,
+    MODE_IDLE_WARM,
     MODE_HEATING,
+    MODE_PASSIVE_HEATING,
+    MODE_IDLE_COLD,
     MODE_IDLE,
 ]
 
@@ -61,6 +69,9 @@ DEFAULT_HEAT_EXTERIOR_THRESHOLD = 60.0   # °F
 DEFAULT_WINTER_START_MONTH = 10  # October
 DEFAULT_WINTER_END_MONTH = 4     # April
 
+# System — Upstairs demand boost: lower AC setpoint by this many °F when zones request cooling
+DEFAULT_UPSTAIRS_DEMAND_BOOST = 1.0  # °F
+
 # System — Whole-house fan entity (thermostat fan mode)
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 
@@ -81,6 +92,7 @@ DEFAULT_AUTO_CONTROL_ENABLED = True
 # System — Identity & sensors
 CONF_THERMOSTAT = "thermostat_entity"
 CONF_WEATHER = "weather_entity"
+CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temp_sensor"
 # System — AC control
 CONF_AC_SETPOINT = "ac_setpoint"
 
@@ -116,6 +128,10 @@ CONF_ZONE_OCCUPANCY = "zone_occupancy_sensor"
 # Zone — Target and fan
 CONF_ZONE_TARGET_TEMP = "zone_target_temp"
 CONF_FAN_SPEED = "fan_speed"
+CONF_AFFECTS_THERMOSTAT = "affects_thermostat"
+
+# Zone — Flags
+DEFAULT_AFFECTS_THERMOSTAT = True
 
 # Attributes
 ATTR_STATUS = "status"

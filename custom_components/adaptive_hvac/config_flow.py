@@ -57,6 +57,7 @@ def _zone_schema_dict(defaults: dict) -> dict:
         vol.Optional("fan_speed", default=defaults.get("fan_speed", DEFAULT_FAN_SPEED)): selector.NumberSelector(
             selector.NumberSelectorConfig(min=10, max=100, step=5, unit_of_measurement="%")
         ),
+        vol.Optional("affects_thermostat", default=defaults.get("affects_thermostat", True)): selector.BooleanSelector(),
     }
 
 
@@ -93,6 +94,9 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required("thermostat_entity", default=""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="climate")
+                ),
+                vol.Optional("outdoor_temp_sensor", default=""): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional("weather_entity", default=""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
@@ -230,6 +234,9 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Required("thermostat_entity", default=d.get("thermostat_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="climate")
+                ),
+                vol.Optional("outdoor_temp_sensor", default=d.get("outdoor_temp_sensor", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional("weather_entity", default=d.get("weather_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")

@@ -1,6 +1,6 @@
 """Pure decision engine for Adaptive HVAC — no Home Assistant imports."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 
@@ -15,6 +15,7 @@ class ZoneState:
     fan_locked: bool = False
     window_open: bool = False
     zone_occupied: bool = True
+    affects_thermostat: bool = True      # False = fans only, never calls thermostat
     current_mode: str = "idle"
     zone_target_temp: float = 72.0       # fan trigger temp (°F)
 
@@ -76,6 +77,8 @@ class SystemConfig:
     cool_interior_override_delta: float = 5.0
     # Heat gating: don't heat if outside is above this
     heat_exterior_threshold: float = 60.0
+    # Upstairs demand boost: lower AC setpoint by this many °F when zones request cooling
+    upstairs_demand_boost: float = 0.0
 
 
 def decide_zone(
@@ -122,33 +125,37 @@ def decide_zone(
             reasoning=["Temp reading invalid"],
         )
 
-    # Emergency cooling — bypass all gating, including fan lock
+    # Emergency cooling — fans always 100%; thermostat call only if zone affects thermostat
     if zone.temp >= cfg.emergency_cool_threshold:
         reasoning.append(f"Temp {zone.temp:.1f}°F ≥ emergency {cfg.emergency_cool_threshold:.1f}°F")
+        if not zone.affects_thermostat:
+            reasoning.append("Zone does not affect thermostat — emergency fans only")
         fan_cmds = {zone.zone_name: 100}
         return ZoneDecision(
             mode="emergency_cooling",
             zone_name=zone.zone_name,
             fan_commands=fan_cmds,
-            thermal_request="cool",
+            thermal_request="cool" if zone.affects_thermostat else None,
             urgency=5,
             status=f"{zone.zone_name}: EMERGENCY COOLING {zone.temp:.1f}°F",
             reasoning=reasoning,
         )
 
-    # Emergency heating — bypass all gating
+    # Emergency heating — thermostat call only if zone affects thermostat
     if zone.temp <= sys_cfg.emergency_heat_threshold:
         reasoning.append(f"Temp {zone.temp:.1f}°F ≤ emergency heat {sys_cfg.emergency_heat_threshold:.1f}°F")
+        if not zone.affects_thermostat:
+            reasoning.append("Zone does not affect thermostat — no heat call")
         return ZoneDecision(
             mode="emergency_heating",
             zone_name=zone.zone_name,
-            thermal_request="heat",
+            thermal_request="heat" if zone.affects_thermostat else None,
             urgency=5,
             status=f"{zone.zone_name}: EMERGENCY HEATING {zone.temp:.1f}°F",
             reasoning=reasoning,
         )
 
-    # Above zone target: request cooling always; local fan only if occupied
+    # Above zone target: fan on; thermal request only if zone affects thermostat
     if zone.temp > cfg.zone_target_temp:
         reasoning.append(f"Temp {zone.temp:.1f}°F > target {cfg.zone_target_temp:.1f}°F")
         if zone.fan_locked:
@@ -159,24 +166,30 @@ def decide_zone(
         else:
             fan_cmds = {zone.zone_name: 0}
             reasoning.append("Zone unoccupied — fan off (thermostat request still active)")
+        thermal = "cool" if zone.affects_thermostat else None
+        if not zone.affects_thermostat:
+            reasoning.append("Zone does not affect thermostat — fans only")
         return ZoneDecision(
             mode="cooling",
             zone_name=zone.zone_name,
             fan_commands=fan_cmds,
-            thermal_request="cool",
+            thermal_request=thermal,
             urgency=2,
             status=f"{zone.zone_name}: COOLING {zone.temp:.1f}°F > {cfg.zone_target_temp:.1f}°F (trend {zone.temp_trend:+.1f}°F/h)",
             reasoning=reasoning,
         )
 
-    # Below heat threshold: request heat (season filtering happens in decide_system)
+    # Below heat threshold: request heat only if zone affects thermostat
     if zone.temp <= sys_cfg.heat_threshold:
         reasoning.append(f"Temp {zone.temp:.1f}°F ≤ heat threshold {sys_cfg.heat_threshold:.1f}°F")
+        thermal = "heat" if zone.affects_thermostat else None
+        if not zone.affects_thermostat:
+            reasoning.append("Zone does not affect thermostat — fans only")
         return ZoneDecision(
             mode="heating",
             zone_name=zone.zone_name,
             fan_commands={},
-            thermal_request="heat",
+            thermal_request=thermal,
             urgency=2,
             status=f"{zone.zone_name}: HEATING {zone.temp:.1f}°F ≤ {sys_cfg.heat_threshold:.1f}°F",
             reasoning=reasoning,
@@ -300,13 +313,33 @@ def decide_system(
                         f"and no zone exceeds interior override delta"
                     )
 
+            # Relative gate: if outdoor is cooler than the requesting zones' targets,
+            # opening windows would achieve comfort — don't run the compressor.
             if allow_cool:
+                cooling_zone_names = {d.zone_name for d in cooling_zones}
+                requesting_states = [z for z in sys_state.zone_states if z.zone_name in cooling_zone_names]
+                if requesting_states:
+                    min_target = min(z.zone_target_temp for z in requesting_states)
+                    if outdoor < min_target:
+                        allow_cool = False
+                        reasoning.append(
+                            f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
+                            f"— cooler outside, open windows"
+                        )
+
+            if allow_cool:
+                boost = cfg.upstairs_demand_boost if cooling_zones else 0.0
+                adjusted_setpoint = cfg.ac_setpoint - boost
+                if boost > 0:
+                    reasoning.append(
+                        f"Upstairs demand boost: setpoint {cfg.ac_setpoint:.0f}°F → {adjusted_setpoint:.0f}°F"
+                    )
                 zone_statuses = " | ".join(d.status for d in cooling_zones)
                 return SystemDecision(
                     thermostat_hvac_mode="cool",
-                    thermostat_setpoint=cfg.ac_setpoint,
+                    thermostat_setpoint=adjusted_setpoint,
                     season=season,
-                    status=f"SYSTEM: COOL → {cfg.ac_setpoint:.0f}°F | {zone_statuses}",
+                    status=f"SYSTEM: COOL → {adjusted_setpoint:.0f}°F | {zone_statuses}",
                     reasoning=reasoning,
                 )
 
@@ -323,12 +356,18 @@ def decide_system(
             allow_heat = outdoor <= cfg.heat_exterior_threshold
             if allow_heat:
                 reasoning.append(f"Heat allowed: outdoor {outdoor:.1f}°F ≤ {cfg.heat_exterior_threshold:.1f}°F")
+                boost = cfg.upstairs_demand_boost if heating_zones else 0.0
+                adjusted_setpoint = cfg.heat_setpoint + boost
+                if boost > 0:
+                    reasoning.append(
+                        f"Upstairs demand boost: setpoint {cfg.heat_setpoint:.0f}°F → {adjusted_setpoint:.0f}°F"
+                    )
                 zone_statuses = " | ".join(d.status for d in heating_zones)
                 return SystemDecision(
                     thermostat_hvac_mode="heat",
-                    thermostat_setpoint=cfg.heat_setpoint,
+                    thermostat_setpoint=adjusted_setpoint,
                     season=season,
-                    status=f"SYSTEM: HEAT → {cfg.heat_setpoint:.0f}°F | {zone_statuses}",
+                    status=f"SYSTEM: HEAT → {adjusted_setpoint:.0f}°F | {zone_statuses}",
                     reasoning=reasoning,
                 )
             else:
@@ -349,3 +388,54 @@ def decide_system(
         status="SYSTEM: OFF",
         reasoning=reasoning + ["Unknown season — system off"],
     )
+
+
+def annotate_zone_decisions(
+    zone_decisions: list[ZoneDecision],
+    system_decision: SystemDecision,
+) -> list[ZoneDecision]:
+    """
+    Relabel zone modes to reflect whether the system is actually heating/cooling.
+
+    A zone may request cooling/heating but the system can block it (window open,
+    outdoor gate, etc.). In that case the zone is only running its fans — label
+    it PASSIVE COOLING/HEATING so the status is honest.
+    """
+    result = []
+    for d in zone_decisions:
+        fans_running = any(spd > 0 for spd in d.fan_commands.values())
+
+        if d.thermal_request == "cool" and system_decision.thermostat_hvac_mode != "cool":
+            if fans_running:
+                # Fans spinning but AC blocked — genuinely passive (airflow without compressor)
+                d = replace(
+                    d,
+                    mode="passive_cooling",
+                    status=d.status.replace("COOLING", "PASSIVE COOLING"),
+                    reasoning=d.reasoning + ["AC not active — fans only"],
+                )
+            else:
+                # No fans, no AC — zone is warm but nothing is running
+                d = replace(
+                    d,
+                    mode="idle_warm",
+                    status=d.status.replace("COOLING", "WARM"),
+                    reasoning=d.reasoning + ["AC not active, no fans running"],
+                )
+        elif d.thermal_request == "heat" and system_decision.thermostat_hvac_mode != "heat":
+            if fans_running:
+                d = replace(
+                    d,
+                    mode="passive_heating",
+                    status=d.status.replace("HEATING", "PASSIVE HEATING"),
+                    reasoning=d.reasoning + ["Heat not active — passive only"],
+                )
+            else:
+                d = replace(
+                    d,
+                    mode="idle_cold",
+                    status=d.status.replace("HEATING", "COLD"),
+                    reasoning=d.reasoning + ["Heat not active, no fans running"],
+                )
+        result.append(d)
+    return result

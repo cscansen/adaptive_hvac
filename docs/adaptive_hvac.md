@@ -1,6 +1,6 @@
 # Adaptive HVAC Integration — Complete Reference
 
-**Version:** v0.3.8  
+**Version:** v0.3.15  
 **Source:** `/custom_components/adaptive_hvac/`  
 **Status:** Deployed, replaces old 13-automation YAML system
 
@@ -11,10 +11,11 @@ Multi-zone HVAC control integration. Each room gets its own zone entry; a single
 Key behaviors:
 - Per-zone fan control gated by occupancy
 - Thermostat decisions never blocked by occupancy
-- System-level AC/heat gating by exterior temperature
+- System-level AC/heat gating by exterior temperature and relative outdoor temp
 - Window sensors block AC on a per-zone basis
 - User fan adjustments lock that zone's fans until midnight
 - Season derived from calendar (Oct–Apr = winter, May–Sep = summer) with optional override
+- Per-zone "affects thermostat" flag — garages and unconditioned spaces control fans only
 
 ## Architecture
 
@@ -27,6 +28,7 @@ System Coordinator (one)
   → aggregates zone thermal requests
   → applies exterior gating + window blocking
   → writes thermostat mode/setpoint
+  → annotates zone decisions to reflect actual system state (passive vs active)
 ```
 
 **Logic engine** (`logic.py`) — pure Python, no HA imports. Used by both the integration and unit tests.
@@ -40,16 +42,16 @@ Settings → Integrations → Adaptive HVAC → Configure (system entry)
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | Thermostat | `climate.downstairs_thermostat` | Controls mode and setpoint |
-| Weather entity | `weather.forecast_home` | Exterior temperature source |
-| AC setpoint | 68°F | Cooling target |
+| Outdoor temp sensor | — | Optional local `sensor` entity; takes priority over weather entity |
+| Weather entity | `weather.forecast_home` | Exterior temperature fallback if no local sensor |
+| AC setpoint | 68°F | Cooling target (`number.adaptive_hvac_ac_setpoint`) |
+| Upstairs demand boost | 1°F | Subtract from AC setpoint when any zone calls for cooling (`number.adaptive_hvac_upstairs_demand_boost`, 0–2°F) |
 | Heat setpoint | 68°F | Heating target |
 | Heat threshold | 68°F | Zone temp that triggers a heat request |
 | Emergency heat threshold | 55°F | Bypasses all gating |
-| Cool exterior threshold | 60°F | Min outdoor temp to allow AC (slider: `number.adaptive_hvac_cool_exterior_threshold`) |
+| Cool exterior threshold | 60°F | Min outdoor temp to allow AC (`number.adaptive_hvac_cool_exterior_threshold`) |
 | Heat exterior threshold | 60°F | Max outdoor temp to allow heat |
 | Cool interior override delta | 5°F | If any zone is this far above its target, bypass exterior gate |
-
-**Current deployed values:** cool exterior threshold = 68°F.
 
 ### Zone entry (`zone`)
 
@@ -67,18 +69,20 @@ One per room. Settings → Integrations → Add → Adaptive HVAC
 | Occupancy sensor | — | Off = fans off (thermostat requests unaffected) |
 | Zone target temp | 72°F | Fan turns on above this |
 | Emergency cool threshold | 85°F | Bypass all gating, fan 100% |
+| Affects thermostat | ON | OFF = fans only; zone never sends cooling/heating request to thermostat. Use for garages, workshops, or any space not served by the HVAC duct |
 | Auto-control switch | — | `switch.adaptive_hvac_{zone}_auto` — turns off fan automation |
 
-### Deployed zones (v0.3.7)
+### Deployed zones (v0.3.15)
 
-| Zone | Temp sensor | Fans | Auto switch | Fan lock switch |
-|------|-------------|------|-------------|-----------------|
-| Caleb's Office | `sensor.caleb_s_office_hygrometer_temperature` | `fan.caleb_office_ceiling` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
-| Tia's Office | `sensor.tias_office_hygrometer_temperature` | `fan.tia_office_ceiling_fan` | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
-| Master Bedroom | `sensor.meter_pro_2689_temperature` | (fans TBD) | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
-| Garage | `sensor.garage_hygrometer_temperature` | — | `switch.adaptive_hvac_garage_auto` | `switch.adaptive_hvac_garage_fan_locked` |
+| Zone | Temp sensor | Fans | Affects thermostat | Auto switch | Fan lock switch |
+|------|-------------|------|--------------------|-------------|-----------------|
+| Caleb's Office | `sensor.caleb_s_office_hygrometer_temperature` | `fan.caleb_office_ceiling` | Yes | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
+| Tia's Office | `sensor.tias_office_hygrometer_temperature` | `fan.tia_office_ceiling_fan` | Yes | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
+| Master Bedroom | `sensor.meter_pro_2689_temperature` | (fans TBD) | Yes | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
+| Garage | `sensor.garage_hygrometer_temperature_2` | `fan.garage_fans` | **No** | `switch.adaptive_hvac_garage_auto` | `switch.adaptive_hvac_garage_fan_locked` |
+| Living Room | — | — | Yes | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
 
-Note: `switch.adaptive_hvac_calebs_office_auto` (no `_2`) is an orphaned registry entry — unavailable, ignore it.
+Note: `switch.adaptive_hvac_calebs_office_auto` (no `_2`) is an orphaned registry entry — unavailable, safe to delete in Settings → Entities.
 
 ## Decision Logic
 
@@ -87,29 +91,50 @@ Note: `switch.adaptive_hvac_calebs_office_auto` (no `_2`) is an orphaned registr
 1. Manual override → no action
 2. System inactive → no action
 3. Temp sensor invalid (≤0 or ≥200) → failsafe, no action
-4. Temp ≥ emergency threshold → fan 100%, request cool (unless fan locked)
-5. Temp ≤ emergency heat threshold → request heat, no fan
-6. Temp > zone target → fan on at configured speed (if occupied and not locked), request cool/heat per season
-7. Temp ≤ zone target AND ≤ heat threshold → request heat, no fan
+4. Temp ≥ emergency threshold → fan 100%, request cool (if `affects_thermostat`)
+5. Temp ≤ emergency heat threshold → request heat (if `affects_thermostat`), no fan
+6. Temp > zone target → fan on at configured speed (if occupied and not locked); request cool (if `affects_thermostat`)
+7. Temp ≤ zone target AND ≤ heat threshold → request heat (if `affects_thermostat`), no fan
 8. Otherwise → fan off (if not locked), no thermal request
 
 **Fan locked:** if the zone's fan lock is ON, the integration skips all fan commands for that zone. Thermal requests still go through.
+
+**Affects thermostat:** if OFF, the zone controls its local fans normally but never sends a thermal request to the system. Window sensor also has no effect on the AC gate. Use for garages or any space not served by the HVAC duct.
+
+### Zone status annotation
+
+After the system decision is made, zone statuses are relabeled to reflect reality:
+
+| Zone requested | System thermostat | Fans running | Label |
+|---|---|---|---|
+| cool | cool | any | COOLING (active) |
+| cool | off/heat | yes | PASSIVE COOLING (fans only, no AC) |
+| cool | off/heat | no | WARM (above target, nothing running) |
+| heat | heat | any | HEATING (active) |
+| heat | off/cool | yes | PASSIVE HEATING |
+| heat | off/cool | no | COLD (below threshold, nothing running) |
 
 ### System decision
 
 Aggregates zone thermal requests, then applies gating:
 
-**Cooling allowed if:**
-- Outdoor temp ≥ cool exterior threshold, OR
-- Any zone is ≥ 5°F above its target (emergency bypass)
-- AND no zone window sensor is open (unless emergency)
+**Cooling allowed if ALL of:**
+- No zone window sensor is open (unless emergency)
+- Outdoor temp ≥ cool exterior threshold (60°F default) — OR any zone is ≥ 5°F above its target (interior override)
+- Outdoor temp ≥ the requesting zones' comfort target — if it's cooler outside than the room needs to be, open windows instead
+
+**When cooling runs:** dispatched setpoint = `ac_setpoint − upstairs_demand_boost` (default 1°F reduction, pushes more cold air upstairs through the single duct).
+
+**When heating runs:** dispatched setpoint = `heat_setpoint + upstairs_demand_boost` (same entity, raises target so furnace runs harder/longer, pushing more warm air upstairs).
 
 **Heating allowed if:**
 - Outdoor temp ≤ heat exterior threshold
 
+**Emergency:** any zone ≥ emergency cool threshold (83°F default) or ≤ emergency heat threshold (55°F) bypasses all gating.
+
 **Season** — calendar only: Oct–Apr = winter, May–Sep = summer. Override: `select.adaptive_hvac_season_override`.
 
-**Setpoint adoption:** if the user adjusts the thermostat faceplate or app, the integration adopts the new value as the seasonal setpoint and persists it to config options. Resets on season change.
+**Setpoint adoption:** if the user adjusts the setpoint via the **HA UI or app** (`context.user_id` set), the integration adopts the new value as the seasonal setpoint and persists it to config options. Resets on season change. Use `number.adaptive_hvac_ac_setpoint` on the dashboard as the primary adjustment mechanism.
 
 ## Fan Lock System
 
@@ -122,7 +147,7 @@ Built into the integration since v0.3.6. No external automations or helpers need
 | Midnight | All zone locks clear automatically |
 | Manual release | Toggle the fan locked switch OFF |
 
-**Edge case:** Physical wall switch presses have no `context.user_id` and bypass the lock trigger. The integration can still override fans set via physical switch.
+Physical wall switch presses are detected and set the fan lock (uses `context.parent_id` to distinguish integration's own dispatches from all other sources).
 
 ## Key Entities
 
@@ -134,7 +159,9 @@ Built into the integration since v0.3.6. No external automations or helpers need
 | `sensor.adaptive_hvac_mode` | Current mode |
 | `switch.adaptive_hvac_active` | Enable/disable integration |
 | `switch.adaptive_hvac_manual_override` | Freeze integration, user controls thermostat directly |
-| `number.adaptive_hvac_cool_exterior_threshold` | Live slider for cool exterior gate (currently 68°F) |
+| `number.adaptive_hvac_ac_setpoint` | AC cooling setpoint (live adjustable) |
+| `number.adaptive_hvac_upstairs_demand_boost` | Setpoint reduction when zones call for cooling (0–2°F, default 1°F) |
+| `number.adaptive_hvac_cool_exterior_threshold` | Live slider for cool exterior gate |
 | `climate.downstairs_thermostat` | The controlled thermostat |
 | `sensor.upstairs_average_temperature` | Avg of Caleb + Tia + Master temps (`templates.yaml`) |
 
@@ -164,16 +191,19 @@ curl -s http://ha.iot.scansenconsulting.com:8123/api/states/sensor.adaptive_hvac
 ## Deployment
 
 ```bash
-# SSH to HA host
-ssh -i ~/.ssh/infra hassio@192.168.255.247
+# HA SSH rejects SCP subsystem — use base64 tar instead
+source ~/.secrets
+tar czf - -C /mnt/nas/ai-workspace/homeassistant/custom_components adaptive_hvac \
+  | base64 \
+  | ssh -i ~/.ssh/infra hassio@192.168.255.247 \
+    "base64 -d > /tmp/adaptive_hvac.tar.gz && \
+     sudo tar xzf /tmp/adaptive_hvac.tar.gz -C /config/custom_components/ && \
+     sudo rm -rf /config/custom_components/adaptive_hvac/__pycache__ && \
+     echo deployed"
 
-# Copy integration (from devbox)
-scp -i ~/.ssh/infra -r custom_components/adaptive_hvac hassio@192.168.255.247:/tmp/
-ssh -i ~/.ssh/infra hassio@192.168.255.247 "sudo cp -r /tmp/adaptive_hvac /config/custom_components/"
-
-# Reload
-curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/homeassistant/reload_custom_components \
-  -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{"domain": "adaptive_hvac"}'
+# Full HA restart required for Python module changes (clears import cache)
+curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/homeassistant/restart \
+  -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
 ```
 
 ## Release Checklist (HACS)
@@ -192,75 +222,53 @@ curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/homeassist
 
 | Version | Key change |
 |---------|-----------|
-| v0.3.8 | Five correctness fixes — see detail below |
-| v0.3.7 | Internal: simplified fan lock — replaced `fans_claimed` set with `fan_locked` bool, removed unused `_fan_claimed_speed` |
-| v0.3.6 | Native fan lock per zone (`switch.adaptive_hvac_{zone}_fan_locked`), midnight reset, removes all external fan lock automations/helpers |
+| v0.3.15 | Unoccupied zones show WARM/COLD (not PASSIVE COOLING/HEATING) — passive labels require fans actually running |
+| v0.3.14 | Zone statuses distinguish passive vs active — PASSIVE COOLING when AC blocked but fans spinning; COOLING only when compressor active |
+| v0.3.13 | Per-zone "Affects thermostat" toggle — unconditioned zones (garage) control fans only, never call AC/heat |
+| v0.3.12 | Upstairs demand boost applies in winter too — raises heat setpoint when zones request heat |
+| v0.3.11 | Local outdoor temp sensor support — `outdoor_temp_sensor` field; takes priority over weather entity |
+| v0.3.10 | Relative outdoor gate — AC blocked when outdoor < requesting zone's comfort target (open windows instead) |
+| v0.3.9 | Fan auto-claim fixed for physical switches; auto-control slug fix for zones with apostrophes; AC setpoint slider now persists; thermostat adoption restricted to HA UI/app; upstairs demand boost feature |
+| v0.3.8 | Five correctness fixes — emergency fan lock override, platform setup order, setpoint adoption API, None broadcast guard, switch state on restart |
+| v0.3.7 | Internal: simplified fan lock — replaced `fans_claimed` set with `fan_locked` bool |
+| v0.3.6 | Native fan lock per zone, midnight reset, removes all external fan lock automations/helpers |
 | v0.3.5 | Removed `windows_assumed_open` sensor and config option |
 | v0.3.4 | Per-zone window sensor AC gate + `number.adaptive_hvac_cool_exterior_threshold` entity |
 | v0.3.3 and earlier | See `CHANGELOG.md` |
 
-## v0.3.8 — Change log for incident diagnosis
+## Troubleshooting
 
-Five bugs were found by code review and fixed on 2026-05-31. If something broke after updating to v0.3.8, this section is your first stop.
+**AC won't turn on even though it's hot inside**
+Check `sensor.adaptive_hvac_status` reasoning. Common blocks:
+- Outdoor temp < zone's comfort target ("cooler outside, open windows") — expected behavior
+- Outdoor temp < `cool_exterior_threshold` (60°F) and no zone exceeds interior override delta
+- A zone window sensor is reporting open
+- `switch.adaptive_hvac_active` is off or `switch.adaptive_hvac_manual_override` is on
 
----
+**AC runs when it shouldn't (outdoor cooler than inside)**
+Update to v0.3.10+. The relative outdoor gate blocks AC when outdoor temp is below the requesting zone's comfort target.
 
-### Fix 1 — Emergency cooling now overrides fan lock (`logic.py`)
+**Setpoint keeps resetting**
+Use `number.adaptive_hvac_ac_setpoint` on the dashboard — it persists to config options immediately. Thermostat adoption only fires for HA UI/app adjustments (requires `context.user_id`); the thermostat's own schedule changes are ignored.
 
-**What changed:** `decide_zone()` emergency cooling branch (`temp ≥ 85°F`) previously returned `fan_commands={}` when a zone's fan was locked. Now it always commands `fan_speed=100%` regardless of lock state.
+**Fan lock not triggering on wall switch**
+Update to v0.3.9+. Earlier versions required `context.user_id` which physical switches don't set. v0.3.9+ uses `context.parent_id` to correctly identify the integration's own dispatches.
 
-**Before:** User locks a fan → room hits 85°F → thermostat runs AC, but ceiling fan stays at whatever the user left it (or off). Functionally degraded cooling at the worst moment.
+**"No zone data available" after restart**
+Normal for ~3 minutes — the system coordinator polls on a 3-minute cycle. Use Force Evaluate to trigger immediately:
+```bash
+source ~/.secrets
+curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/services/adaptive_hvac/force_evaluate \
+  -H "Authorization: Bearer $HA_TOKEN" -H "Content-Type: application/json" -d '{}'
+```
 
-**After:** Emergency threshold overrides the lock. Fans spin at 100%. Lock clears at midnight as normal.
+**Zone entries show `not_loaded` after HA restart**
+Zone entries start `not_loaded` until the system entry loads and discovers them. After HA restarts, manually reload the system entry to cascade:
+```bash
+source ~/.secrets
+curl -s -X POST http://ha.iot.scansenconsulting.com:8123/api/config/config_entries/entry/01KSTXRXHE88HHNRP8QS6CA3FS/reload \
+  -H "Authorization: Bearer $HA_TOKEN"
+```
 
-**If this causes a problem:** A user-locked fan spinning up unexpectedly during an emergency. To suppress: lower `emergency_cool_threshold` above any realistic room temp, or use `switch.adaptive_hvac_active` to pause the integration.
-
----
-
-### Fix 2 — Platform setup order changed for zone entries (`__init__.py`)
-
-**What changed:** For zone config entries, `async_forward_entry_setups()` (which creates entities including `FanLockedSwitch`) now runs **before** `async_config_entry_first_refresh()`. Previously it was the reverse — entities were created after the first coordinator evaluation.
-
-**Before:** On every HA restart, the first evaluation ran with `_fan_locked=False` regardless of persisted state, potentially issuing a fan command that the lock was supposed to suppress.
-
-**After:** `FanLockedSwitch.async_added_to_hass` restores `_fan_locked` before the first evaluation runs.
-
-**If this causes a problem:** Entities may briefly show as unavailable at startup (coordinator has no data yet when entities first appear). They populate on the first refresh, which runs immediately after. If zone entities fail to load, check HA logs for `ConfigEntryNotReady` from the zone coordinator — that indicates a sensor read failure during first refresh, same as before.
-
----
-
-### Fix 3 — Setpoint adoption uses HA options API (`coordinator.py`)
-
-**What changed:** `handle_thermostat_state_change()` previously wrote directly to the `core.config_entries` JSON file on disk to persist adopted setpoints. This left `config_entry.options` stale in memory for the rest of the session, so `_effective_setpoint()` was silently using the old value. Now it calls `hass.config_entries.async_update_entry()` which updates both the in-memory cache and the persisted storage correctly.
-
-A `_suppress_setpoint_reload` flag prevents the options-change event from triggering a full config-entry reload (which would have briefly made entities unavailable).
-
-**Before:** Adjusting the thermostat from the faceplate or app appeared to be adopted, but `_effective_setpoint()` returned the previous options value for the rest of the session. Only after an HA restart would the adopted value take effect.
-
-**After:** Adopted setpoints are effective immediately and persisted correctly.
-
-**If this causes a problem:** The suppress-reload flag is set to `True` before `async_update_entry` and cleared in the update listener. If the listener fires more than once (e.g., due to a race), only the first call is suppressed — subsequent calls trigger a normal reload. If setpoint adoption is causing unexpected reloads, check `_suppress_setpoint_reload` state in the coordinator.
-
----
-
-### Fix 4 — Guard against `None` broadcast in fan lock methods (`coordinator.py`)
-
-**What changed:** `set_fan_lock()`, `_handle_fan_change()`, and `_midnight_reset()` now check `if self.last_decision is not None` before calling `async_set_updated_data(self.last_decision)`. Previously, if any of these fired before the first coordinator evaluation completed, `None` would be broadcast to all subscribers.
-
-**Before:** A switch restore, fan event, or (theoretically) a midnight reset at the exact moment of startup could push `None` as coordinator data, causing `AttributeError` in entity property accessors or making entities show unavailable.
-
-**After:** If `last_decision` is None, the immediate notify is skipped; `async_request_refresh()` still runs and will populate data correctly.
-
-**If this causes a problem:** If fan lock state changes aren't reflected immediately in the UI, it means `last_decision` was None at the time of the change and the refresh hasn't completed yet. This is a transient startup condition and self-resolves within one scan interval.
-
----
-
-### Fix 5 — Fan lock switch shows correct state immediately after restart (`switch.py`)
-
-**What changed:** `FanLockedSwitch.async_added_to_hass()` now calls `self.async_write_ha_state()` after restoring `_fan_locked` from persisted state.
-
-**Before:** After HA restart, the fan lock switch UI showed the wrong state (off/False) for up to one full scan interval (3 minutes) even though the coordinator was correctly enforcing the lock.
-
-**After:** Switch reflects correct state immediately after entity setup completes.
-
-**If this causes a problem:** None expected — `async_write_ha_state()` is a standard HA pattern for RestoreEntity. If the switch flickers on startup, it's likely a coordinator data timing issue, not this change.
+**A zone is stuck in `failed_unload`**
+Usually caused by a previous deployment error leaving the zone in a bad state. A full HA restart followed by a system entry reload clears it. Cannot be reloaded directly while in `failed_unload` state.

@@ -29,6 +29,8 @@ from .const import (
     DEFAULT_COOL_INTERIOR_OVERRIDE_DELTA,
     DEFAULT_HEAT_EXTERIOR_THRESHOLD,
     DEFAULT_AUTO_CONTROL_ENABLED,
+    DEFAULT_AFFECTS_THERMOSTAT,
+    DEFAULT_UPSTAIRS_DEMAND_BOOST,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -41,6 +43,7 @@ from .logic import (
     SystemDecision,
     decide_zone,
     decide_system,
+    annotate_zone_decisions,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,7 +146,11 @@ class ZoneCoordinator(DataUpdateCoordinator):
     def _handle_fan_change(self, event) -> None:
         """Lock fan when user manually changes a fan in this zone."""
         new_state = event.data.get("new_state")
-        if new_state is None or new_state.context.user_id is None:
+        if new_state is None:
+            return
+        # Skip our own dispatches: integration service calls have parent_id but no user_id.
+        # Physical switch presses and HA UI/app changes should trigger the lock.
+        if new_state.context.user_id is None and new_state.context.parent_id is not None:
             return
         self._fan_locked = True
         _LOGGER.debug(f"Zone {self.zone_name}: fan locked by user")
@@ -162,7 +169,8 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
     def _read_auto_control_enabled(self) -> bool:
         """Check if zone auto-control switch is on."""
-        zone_slug = self.zone_name.lower().replace(" ", "_")
+        import re
+        zone_slug = re.sub(r"[^a-z0-9_]", "", self.zone_name.lower().replace(" ", "_"))
         auto_entity = f"switch.adaptive_hvac_{zone_slug}_auto"
         state = self.hass.states.get(auto_entity)
         if state:
@@ -213,6 +221,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
             fan_locked=self._fan_locked,
             window_open=self._read_window_open(),
             zone_occupied=self._read_occupancy(),
+            affects_thermostat=bool(self.zone_config.get("affects_thermostat", DEFAULT_AFFECTS_THERMOSTAT)),
             current_mode=self.last_decision.mode if self.last_decision else "idle",
             zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
         )
@@ -289,9 +298,14 @@ class SystemCoordinator(DataUpdateCoordinator):
 
     @callback
     def handle_thermostat_state_change(self, event) -> None:
-        """Adopt thermostat setpoint changes made by the user (faceplate or app)."""
+        """Adopt thermostat setpoint changes made by the user (HA UI or app only)."""
         new_state = event.data.get("new_state")
         if not new_state:
+            return
+        # Only adopt changes triggered by a logged-in HA user (UI or app).
+        # Thermostat-internal schedule changes and device boot-up events have user_id=None
+        # and would otherwise overwrite the user's configured setpoint.
+        if new_state.context.user_id is None:
             return
 
         new_setpoint = new_state.attributes.get("temperature")
@@ -326,7 +340,18 @@ class SystemCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(f"Persisted {key}={new_setpoint} to config entry options")
 
     def _read_outdoor_temp(self) -> float:
-        """Read current outdoor temperature from weather entity."""
+        """Read outdoor temperature — local sensor takes priority over weather entity."""
+        # Local sensor: state.state is the temperature value directly
+        sensor_entity = self.system_config.get("outdoor_temp_sensor")
+        if sensor_entity:
+            state = self.hass.states.get(sensor_entity)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    return float(state.state)
+                except (ValueError, TypeError):
+                    pass
+
+        # Fall back to weather entity attribute
         weather_entity = self.system_config.get("weather_entity")
         if not weather_entity:
             return 70.0
@@ -428,6 +453,7 @@ class SystemCoordinator(DataUpdateCoordinator):
                 fan_locked=coord._fan_locked,
                 window_open=coord._read_window_open(),
                 zone_occupied=coord._read_occupancy(),
+                affects_thermostat=bool(coord.zone_config.get("affects_thermostat", DEFAULT_AFFECTS_THERMOSTAT)),
                 zone_target_temp=float(coord.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
             ))
 
@@ -449,13 +475,20 @@ class SystemCoordinator(DataUpdateCoordinator):
             cool_exterior_threshold=float(self.system_config.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)),
             cool_interior_override_delta=float(self.system_config.get("cool_interior_override_delta", DEFAULT_COOL_INTERIOR_OVERRIDE_DELTA)),
             heat_exterior_threshold=float(self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)),
+            upstairs_demand_boost=self._effective_setpoint("upstairs_demand_boost", DEFAULT_UPSTAIRS_DEMAND_BOOST),
         )
 
         decision = decide_system(sys_state, zone_decisions, cfg)
         self.last_decision = decision
 
+        # Relabel zone decisions to reflect actual system state (passive vs active)
+        annotated = annotate_zone_decisions(zone_decisions, decision)
+        for coord, ann_decision in zip(self.zone_coordinators, annotated):
+            coord.last_decision = ann_decision
+            coord.async_update_listeners()  # notify without cancelling refresh schedule
+
         await self._dispatch_thermostat(decision, cfg)
-        await self._dispatch_fans(zone_decisions)
+        await self._dispatch_fans(annotated)
 
         _LOGGER.info(f"System: {decision.thermostat_hvac_mode} {decision.thermostat_setpoint or 'OFF'} — {decision.status}")
         return decision

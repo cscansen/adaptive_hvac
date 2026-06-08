@@ -4,6 +4,89 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.15] - 2026-06-07
+
+### Fixed
+- **Zone status no longer says "PASSIVE COOLING" for unoccupied zones** — passive cooling requires
+  fans actually running. Unoccupied zones have fans at 0, so they now show `WARM` / `idle_warm`
+  (above target, no fans, no AC) instead. `PASSIVE COOLING` is reserved for occupied zones where
+  fans are spinning but AC is blocked. Same logic applies on the heat side: `COLD` / `idle_cold`
+  vs `PASSIVE HEATING`.
+
+## [0.3.14] - 2026-06-07
+
+### Changed
+- **Zone status now distinguishes passive vs active cooling/heating** — when a zone is above its
+  target but the system thermostat is blocked (window open, outdoor gate, etc.), the zone mode
+  is now `passive_cooling` / `passive_heating` with status "PASSIVE COOLING / PASSIVE HEATING"
+  instead of the misleading "COOLING / HEATING". Active modes only show when the thermostat is
+  actually running. Reasoning includes "AC not active — fans only" or "Heat not active — passive only".
+
+## [0.3.13] - 2026-06-07
+
+### Added
+- **Per-zone "Affects thermostat" toggle** — new boolean in zone config (default ON). When turned
+  OFF, the zone controls its local fans based on temperature vs target as normal, but never sends
+  a cooling or heating request to the system thermostat. Use this for unconditioned spaces (garage,
+  workshop) where you want fan automation without the zone influencing AC or heat calls.
+  Window sensor on these zones also has no effect on the system AC gate.
+
+## [0.3.12] - 2026-06-07
+
+### Changed
+- **Upstairs demand boost now applies in both seasons** — in winter, when zones request heat, the
+  dispatched heat setpoint is raised by `upstairs_demand_boost` (same entity, default 1°F) so the
+  furnace runs harder/longer to push warm air upstairs through the single duct. Emergency heat uses
+  the base `heat_setpoint` and is unaffected. Previously the boost only applied to summer cooling.
+
+## [0.3.11] - 2026-06-07
+
+### Added
+- **Local outdoor temperature sensor support** — new optional `outdoor_temp_sensor` field in
+  system setup and options flow (any `sensor` entity). When configured, the local sensor reading
+  is used instead of the weather entity, giving real-time outdoor temperature without the
+  update delay inherent in weather integrations. Falls back to `weather_entity` if the sensor
+  is unavailable or not configured. Both fields remain optional; the local sensor takes priority.
+
+## [0.3.10] - 2026-06-07
+
+### Fixed
+- **AC no longer runs when it's cooler outside than the zone target** — added a relative outdoor
+  gate: if the outdoor temperature is below the comfort target of any zone requesting cooling,
+  AC is blocked (opening windows would achieve comfort more efficiently). The absolute
+  `cool_exterior_threshold` gate (60°F) and interior override remain; this gate applies after
+  both and cannot be bypassed except by emergency cooling (≥85°F).
+
+## [0.3.9] - 2026-06-07
+
+### Fixed
+- **Fan auto-claim now triggers on physical switch presses** — `_handle_fan_change` previously
+  required `context.user_id` (only set by HA UI/app), ignoring wall switch events. Now uses
+  `context.parent_id` to distinguish: skips lock only when `user_id=None` AND `parent_id!=None`
+  (integration's own dispatch); locks for all other sources including physical switches.
+- **Auto-control switch now works for zones with special characters in their name** —
+  `_read_auto_control_enabled` was using `.replace(" ", "_")` to build the entity slug, keeping
+  apostrophes that HA strips from entity IDs. Now uses the same `re.sub(r"[^a-z0-9_]", "", ...)`
+  sanitizer as the switch entity. Caleb's Office auto-control toggle was silently ignored; now works.
+- **AC setpoint set via dashboard slider now persists across restarts** — `ACSetpointNumber`
+  (and all system number entities) previously only wrote to in-memory `system_config`. Because
+  `_effective_setpoint` reads `config_entry.options` first, an in-memory write was shadowed by
+  any previously adopted options value. Number entities now write through to `config_entry.options`
+  via the same suppress-reload path used by thermostat setpoint adoption.
+- **Thermostat setpoint adoption restricted to HA UI/app actions** — `handle_thermostat_state_change`
+  previously adopted any setpoint change > 0.5°F from the last integration dispatch, including the
+  thermostat's own internal schedule. Adoption now requires `context.user_id` to be set, meaning
+  only explicit HA UI or app adjustments are adopted. Use the dashboard AC Setpoint slider for
+  adjusting the target; it now persists correctly across restarts.
+
+### Added
+- **Upstairs demand boost** — when any zone requests cooling, the dispatched AC setpoint is
+  automatically reduced by a configurable amount (default 1°F, range 0–2°F, step 0.5°F). This
+  makes the AC run longer/harder per cycle, pushing more cold air through the duct to upstairs
+  rooms via the single zone thermostat. Configurable via `number.adaptive_hvac_upstairs_demand_boost`
+  on the HVAC dashboard. Boost is included in the system status reasoning attribute. Emergency
+  cooling uses the base `ac_setpoint` and is unaffected.
+
 ## [0.3.8] - 2026-05-31
 
 ### Fixed
