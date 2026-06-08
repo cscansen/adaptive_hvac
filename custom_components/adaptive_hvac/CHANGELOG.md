@@ -4,6 +4,13 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.17] - 2026-06-08
+
+### Changed
+- **Floor circulation suppressed during sleep posture** — when the sleep posture entity is active,
+  the whole-house fan stays in `auto` and will not turn on for temperature equalization. Reasoning
+  includes "Floor circulation suppressed — sleep posture active".
+
 ## [0.3.16] - 2026-06-08
 
 ### Added
