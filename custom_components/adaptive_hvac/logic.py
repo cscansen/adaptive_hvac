@@ -247,7 +247,7 @@ def decide_system(
         )
 
     # Floor circulation fan mode — computed before gating so it applies on all off paths
-    fan_mode, fan_reasoning = _floor_fan_mode(sys_state.zone_states, cfg, reasoning)
+    fan_mode, fan_reasoning = _floor_fan_mode(sys_state.zone_states, cfg, sys_state.sleep_posture)
 
     # Emergency requests bypass gating (fan stays auto — HVAC fan already runs with compressor/furnace)
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
@@ -404,15 +404,19 @@ def decide_system(
 def _floor_fan_mode(
     zone_states: list[ZoneState],
     cfg: SystemConfig,
-    base_reasoning: list[str],
+    sleep_posture: bool,
 ) -> tuple[str, list[str]]:
     """
     Determine whole-house fan mode based on floor temperature differential.
 
     Groups zones by their floor ID (zones with no floor are excluded).
     If any two floors differ by >= cfg.fan_circulation_delta, returns "on".
+    Suppressed when sleep_posture is active.
     Otherwise returns "auto".
     """
+    if sleep_posture:
+        return "auto", ["Floor circulation suppressed — sleep posture active"]
+
     floors: dict[str, list[float]] = {}
     for z in zone_states:
         if z.floor and z.temp > 0:
