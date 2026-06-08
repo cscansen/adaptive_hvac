@@ -2,27 +2,33 @@
 """
 Adaptive HVAC — Dashboard Generator
 
-Reads your live Adaptive HVAC zone configuration from Home Assistant via the
-REST API and generates a fully populated Lovelace dashboard.
+Two modes:
 
-Usage:
+  --local   Runs ON the HA host. Reads config directly from HA storage files.
+            No token or network access required. Writes the dashboard file in
+            place. Intended to be called from an HA shell_command; the HA
+            Script entity fires lovelace_updated after this exits.
+
+  (remote)  Runs on any machine with network access to HA. Reads zone config
+            via the REST API (requires HA_TOKEN). Deploys via file output or
+            SSH.
+
+Usage — local (on HA host, no token needed):
+    python3 generate_dashboard.py --local
+
+Usage — remote (from a dev machine):
     export HA_URL=http://homeassistant.local:8123
-    export HA_TOKEN=<your long-lived access token>
-    python3 generate_dashboard.py [options]
+    export HA_TOKEN=<long-lived access token>
+    python3 generate_dashboard.py [--output FILE | --stdout | --ssh USER@HOST]
 
 Options:
-    --output FILE     Write dashboard JSON to FILE (default: dashboard_hvac.json)
-    --stdout          Print JSON to stdout instead of writing a file
-    --ssh USER@HOST   Deploy directly to HA via SSH (writes storage file + reloads)
-    --ssh-key FILE    SSH private key to use with --ssh (default: ~/.ssh/id_rsa)
-    --dry-run         Build and print the card structure without writing anything
-
-Requirements:
-    Python 3.10+, no third-party libraries required.
-
-Deployment options after running (see DASHBOARD.md for details):
-    1. Raw Config Editor — paste the generated JSON into your dashboard's raw editor
-    2. SSH deploy       — use --ssh to write the storage file directly
+    --local           Read/write HA storage files directly (no auth required)
+    --ha-config DIR   HA config directory for --local (default: /config)
+    --output FILE     Write JSON to FILE (default: dashboard_hvac.json)
+    --stdout          Print JSON to stdout
+    --ssh USER@HOST   Deploy via SSH to HA host
+    --ssh-key FILE    SSH key for --ssh (default: ~/.ssh/id_rsa)
+    --dry-run         Show card structure without writing anything
 """
 
 import base64
@@ -37,24 +43,17 @@ from itertools import zip_longest
 
 
 # ---------------------------------------------------------------------------
-# Config from environment
-# ---------------------------------------------------------------------------
-
-HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123").rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
-DASHBOARD_KEY = "lovelace.dashboard_hvac"
-
-
-# ---------------------------------------------------------------------------
-# CLI flags
+# CLI
 # ---------------------------------------------------------------------------
 
 args = sys.argv[1:]
+LOCAL_MODE = "--local" in args
 DRY_RUN = "--dry-run" in args
 TO_STDOUT = "--stdout" in args
 OUTPUT_FILE = "dashboard_hvac.json"
 SSH_TARGET = None
 SSH_KEY = os.path.expanduser("~/.ssh/id_rsa")
+HA_CONFIG_DIR = "/config"
 
 for i, a in enumerate(args):
     if a == "--output" and i + 1 < len(args):
@@ -63,15 +62,90 @@ for i, a in enumerate(args):
         SSH_TARGET = args[i + 1]
     if a == "--ssh-key" and i + 1 < len(args):
         SSH_KEY = args[i + 1]
+    if a == "--ha-config" and i + 1 < len(args):
+        HA_CONFIG_DIR = args[i + 1]
+
+DASHBOARD_KEY = "lovelace.dashboard_hvac"
+STORAGE_DIR = os.path.join(HA_CONFIG_DIR, ".storage")
+DASHBOARD_PATH = os.path.join(STORAGE_DIR, DASHBOARD_KEY)
+
+# Remote-mode settings from environment
+HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123").rstrip("/")
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
 
 
 # ---------------------------------------------------------------------------
-# HA REST API helpers
+# Shared utility
+# ---------------------------------------------------------------------------
+
+def zone_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9_]", "", name.lower().replace(" ", "_"))
+
+
+# ---------------------------------------------------------------------------
+# LOCAL MODE — read directly from HA storage files (no token needed)
+# ---------------------------------------------------------------------------
+
+def local_read_config_entries() -> list[dict]:
+    path = os.path.join(STORAGE_DIR, "core.config_entries")
+    with open(path) as f:
+        data = json.load(f)
+    return [
+        e for e in data["data"]["entries"]
+        if e["domain"] == "adaptive_hvac"
+    ]
+
+
+def local_read_entity_registry() -> list[dict]:
+    path = os.path.join(STORAGE_DIR, "core.entity_registry")
+    with open(path) as f:
+        data = json.load(f)
+    return data["data"]["entities"]
+
+
+def local_get_config(entry: dict) -> dict:
+    return {**entry.get("data", {}), **entry.get("options", {})}
+
+
+def local_discover_zones(entries: list[dict], entity_registry: list[dict]) -> list[dict]:
+    """Build zone list from config entries + entity registry (no live state needed)."""
+    zone_entries = [e for e in entries if local_get_config(e).get("entry_type") == "zone"]
+    all_entity_ids = {e["entity_id"] for e in entity_registry}
+
+    zones = []
+    for entry in zone_entries:
+        cfg = local_get_config(entry)
+        name = entry["title"]
+        slug = zone_slug(name)
+        zones.append({
+            "title": name,
+            "slug": slug,
+            "attrs": {
+                "temp_sensors": cfg.get("temp_sensors", []),
+                "fans": cfg.get("fans", []),
+                "floor": cfg.get("floor", ""),
+                "affects_thermostat": cfg.get("affects_thermostat", True),
+                "zone_target_temp": cfg.get("zone_target_temp", 72.0),
+            },
+            "all_ids": all_entity_ids,
+        })
+    return zones
+
+
+def local_get_thermostat(entries: list[dict]) -> str:
+    system = next(
+        (e for e in entries if local_get_config(e).get("entry_type") == "system"), {}
+    )
+    return local_get_config(system).get("thermostat_entity", "climate.downstairs_thermostat")
+
+
+# ---------------------------------------------------------------------------
+# REMOTE MODE — REST API
 # ---------------------------------------------------------------------------
 
 def ha_get(path: str) -> object:
     if not HA_TOKEN:
-        sys.exit("HA_TOKEN is not set. Export it before running:\n  export HA_TOKEN=<token>")
+        sys.exit("HA_TOKEN is not set.\n  export HA_TOKEN=<long-lived access token>")
     req = urllib.request.Request(
         f"{HA_URL}{path}",
         headers={"Authorization": f"Bearer {HA_TOKEN}"},
@@ -100,50 +174,35 @@ def ha_post(path: str, data: dict = None) -> None:
         print(f"  Warning: POST {path} returned {e.code}", file=sys.stderr)
 
 
-# ---------------------------------------------------------------------------
-# Zone discovery via entity states
-# ---------------------------------------------------------------------------
-
-def zone_slug(name: str) -> str:
-    """Match the slug produced by the integration's entity setup."""
-    return re.sub(r"[^a-z0-9_]", "", name.lower().replace(" ", "_"))
-
-
-def discover_zones(states: list[dict]) -> list[dict]:
-    """
-    Discover zones by finding all *_hvac_status sensors that belong to the
-    adaptive_hvac integration and reading their config attributes.
-    Returns list of zone dicts with keys: title, slug, attrs.
-    """
-    status_sensors = [
-        s for s in states
-        if s["entity_id"].endswith("_hvac_status")
-        and "adaptive_hvac" not in s["entity_id"]  # exclude system sensor
-        and s["entity_id"].startswith("sensor.")
-    ]
-
-    # Cross-reference: a valid zone sensor will have a matching auto switch
+def remote_discover_zones(states: list[dict]) -> list[dict]:
+    all_ids = {s["entity_id"] for s in states}
     auto_switches = {s["entity_id"] for s in states if "_auto" in s["entity_id"] and "adaptive_hvac" in s["entity_id"]}
 
     zones = []
-    for sensor in status_sensors:
-        entity_id = sensor["entity_id"]
-        # sensor.calebs_office_hvac_status → calebs_office
-        slug = entity_id.removeprefix("sensor.").removesuffix("_hvac_status")
-        # Confirm a matching auto switch exists
-        has_auto = any(f"adaptive_hvac_{slug}_auto" in sw for sw in auto_switches)
-        if not has_auto:
+    for s in states:
+        entity_id = s["entity_id"]
+        if not (entity_id.startswith("sensor.") and entity_id.endswith("_hvac_status") and "adaptive_hvac" not in entity_id):
             continue
-        attrs = sensor.get("attributes", {})
-        raw_name = attrs.get("friendly_name", slug.replace("_", " ").title())
-        title = re.sub(r"\s+HVAC\s+Status$", "", raw_name, flags=re.IGNORECASE).strip()
-        zones.append({"title": title, "slug": slug, "attrs": attrs, "entity_id": entity_id})
-
+        slug = entity_id.removeprefix("sensor.").removesuffix("_hvac_status")
+        if not any(f"adaptive_hvac_{slug}_auto" in sw for sw in auto_switches):
+            continue
+        attrs = s.get("attributes", {})
+        raw = attrs.get("friendly_name", slug.replace("_", " ").title())
+        title = re.sub(r"\s+HVAC\s+Status$", "", raw, flags=re.IGNORECASE).strip()
+        zones.append({"title": title, "slug": slug, "attrs": attrs, "all_ids": all_ids})
     return zones
 
 
+def remote_get_thermostat(states: list[dict]) -> str:
+    system = next((s for s in states if s["entity_id"] == "sensor.adaptive_hvac_status"), {})
+    return system.get("attributes", {}).get("thermostat_entity", "climate.downstairs_thermostat")
+
+
+# ---------------------------------------------------------------------------
+# Entity resolution
+# ---------------------------------------------------------------------------
+
 def resolve_switch(slug: str, suffix: str, all_ids: set[str]) -> str:
-    """Find the live entity ID, handling HA's _2/_3 dedup suffix."""
     base = f"switch.adaptive_hvac_{slug}_{suffix}"
     for candidate in [base, f"{base}_2", f"{base}_3"]:
         if candidate in all_ids:
@@ -169,39 +228,35 @@ def markdown_card(zones: list[dict]) -> dict:
     return {"type": "markdown", "content": "\n".join(lines)}
 
 
-def system_glance_card(system_state: dict) -> dict:
-    attrs = system_state.get("attributes", {})
-    thermostat = attrs.get("thermostat_entity", "climate.downstairs_thermostat")
-    thermostat_base = thermostat.removeprefix("climate.")
-
-    entities = [
-        {"entity": "sensor.adaptive_hvac_season", "name": "Season", "icon": "mdi:calendar"},
-        {"entity": "sensor.adaptive_hvac_mode", "name": "Mode", "icon": "mdi:hvac"},
-        {"entity": thermostat, "name": "Setpoint", "attribute": "temperature", "icon": "mdi:thermometer"},
-        {"entity": f"sensor.{thermostat_base}_temperature", "name": "Therm Temp", "icon": "mdi:thermometer-lines"},
-        {"entity": "sensor.adaptive_hvac_outdoor_temp", "name": "Outdoor", "icon": "mdi:weather-partly-cloudy"},
-        {"entity": f"sensor.{thermostat_base}_humidity", "name": "Humidity", "icon": "mdi:water-percent"},
-        {"entity": thermostat, "name": "Fan", "attribute": "fan_mode", "icon": "mdi:fan"},
-    ]
+def system_glance_card(thermostat: str) -> dict:
+    base = thermostat.removeprefix("climate.")
     return {
         "type": "glance",
         "title": "System",
         "show_name": True,
         "show_icon": True,
-        "entities": entities,
+        "entities": [
+            {"entity": "sensor.adaptive_hvac_season", "name": "Season", "icon": "mdi:calendar"},
+            {"entity": "sensor.adaptive_hvac_mode", "name": "Mode", "icon": "mdi:hvac"},
+            {"entity": thermostat, "name": "Setpoint", "attribute": "temperature", "icon": "mdi:thermometer"},
+            {"entity": f"sensor.{base}_temperature", "name": "Therm Temp", "icon": "mdi:thermometer-lines"},
+            {"entity": f"sensor.{base}_humidity", "name": "Humidity", "icon": "mdi:water-percent"},
+            {"entity": "sensor.adaptive_hvac_outdoor_temp", "name": "Outdoor", "icon": "mdi:weather-partly-cloudy"},
+            {"entity": thermostat, "name": "Fan", "attribute": "fan_mode", "icon": "mdi:fan"},
+        ],
     }
 
 
-def zone_card(zone: dict, all_ids: set[str]) -> dict:
+def zone_card(zone: dict) -> dict:
     slug = zone["slug"]
     attrs = zone["attrs"]
+    all_ids = zone["all_ids"]
 
     entities = [{"entity": f"sensor.{slug}_hvac_status", "name": "Status"}]
 
     for sensor in attrs.get("temp_sensors", [])[:1]:
         entities.append({"entity": sensor, "name": "Temp"})
 
-    # fans controlled by the integration for this zone
     for fan in attrs.get("fans", []):
         entities.append({"entity": fan, "name": "Fan"})
 
@@ -212,32 +267,24 @@ def zone_card(zone: dict, all_ids: set[str]) -> dict:
 
 
 def zone_pairs(zone_cards: list[dict]) -> list[dict]:
-    stacks = []
-    for a, b in zip_longest(zone_cards[::2], zone_cards[1::2]):
-        stacks.append({"type": "horizontal-stack", "cards": [a] if b is None else [a, b]})
-    return stacks
+    return [
+        {"type": "horizontal-stack", "cards": [a] if b is None else [a, b]}
+        for a, b in zip_longest(zone_cards[::2], zone_cards[1::2])
+    ]
 
 
 def floor_temps_glance(zones: list[dict]) -> dict:
     by_floor: dict[str, list] = {}
     no_floor = []
-
     for z in zones:
         sensors = z["attrs"].get("temp_sensors", [])
         if not sensors:
             continue
         floor = z["attrs"].get("floor", "")
         item = {"entity": sensors[0], "name": z["title"].split()[0]}
-        if floor:
-            by_floor.setdefault(floor, []).append(item)
-        else:
-            no_floor.append(item)
+        (by_floor.setdefault(floor, []) if floor else no_floor).append(item)
 
-    entities = []
-    for floor in sorted(by_floor):
-        entities.extend(by_floor[floor])
-    entities.extend(no_floor)
-
+    entities = [e for f in sorted(by_floor) for e in by_floor[f]] + no_floor
     return {"type": "glance", "title": "Zone Temperatures", "show_name": True, "entities": entities}
 
 
@@ -298,11 +345,16 @@ def force_evaluate_button() -> dict:
         "type": "button",
         "name": "Force Evaluate Now",
         "icon": "mdi:refresh",
-        "tap_action": {
-            "action": "call-service",
-            "service": "adaptive_hvac.force_evaluate",
-            "data": {},
-        },
+        "tap_action": {"action": "call-service", "service": "adaptive_hvac.force_evaluate", "data": {}},
+    }
+
+
+def rebuild_dashboard_button() -> dict:
+    return {
+        "type": "button",
+        "name": "Rebuild Dashboard",
+        "icon": "mdi:view-dashboard-edit",
+        "tap_action": {"action": "call-service", "service": "script.rebuild_hvac_dashboard", "data": {}},
     }
 
 
@@ -310,24 +362,11 @@ def force_evaluate_button() -> dict:
 # Dashboard assembler
 # ---------------------------------------------------------------------------
 
-def build_dashboard(states: list[dict]) -> dict:
-    all_ids = {s["entity_id"] for s in states}
-
-    system_state = next(
-        (s for s in states if s["entity_id"] == "sensor.adaptive_hvac_status"), {}
-    )
-    sys_attrs = system_state.get("attributes", {})
-    thermostat = sys_attrs.get("thermostat_entity", "climate.downstairs_thermostat")
-
-    zones = discover_zones(states)
-    if not zones:
-        print("Warning: no zones found. Is the integration loaded and have zones configured?", file=sys.stderr)
-
-    z_cards = [zone_card(z, all_ids) for z in zones]
-
+def build_dashboard(zones: list[dict], thermostat: str) -> dict:
+    z_cards = [zone_card(z) for z in zones]
     cards = [
         markdown_card(zones),
-        system_glance_card(system_state),
+        system_glance_card(thermostat),
         *zone_pairs(z_cards),
         floor_temps_glance(zones),
         history_graph_card(thermostat),
@@ -335,24 +374,13 @@ def build_dashboard(states: list[dict]) -> dict:
         setpoints_card(),
         logbook_card(thermostat),
         force_evaluate_button(),
+        rebuild_dashboard_button(),
     ]
-
     return {
         "version": 1,
         "minor_version": 1,
         "key": DASHBOARD_KEY,
-        "data": {
-            "config": {
-                "views": [
-                    {
-                        "title": "HVAC",
-                        "path": "hvac",
-                        "icon": "mdi:thermostat",
-                        "cards": cards,
-                    }
-                ]
-            }
-        },
+        "data": {"config": {"views": [{"title": "HVAC", "path": "hvac", "icon": "mdi:thermostat", "cards": cards}]}},
     }
 
 
@@ -360,38 +388,36 @@ def build_dashboard(states: list[dict]) -> dict:
 # Deploy
 # ---------------------------------------------------------------------------
 
-def deploy_ssh(dashboard: dict) -> None:
+def write_local(dashboard: dict) -> None:
     payload = json.dumps(dashboard, indent=2, ensure_ascii=False)
-    encoded = base64.b64encode(payload.encode()).decode()
-
-    ssh_cmd = ["ssh"]
-    if SSH_KEY:
-        ssh_cmd += ["-i", SSH_KEY]
-    ssh_cmd.append(SSH_TARGET)
-    ssh_cmd.append(
-        f"echo '{encoded}' | base64 -d | sudo tee /config/.storage/{DASHBOARD_KEY} > /dev/null"
-    )
-
-    subprocess.run(ssh_cmd, check=True)
-    print(f"Wrote /config/.storage/{DASHBOARD_KEY} on {SSH_TARGET}")
-
-    ha_post("/api/events/lovelace_updated", {})
-    print("Fired lovelace_updated — refresh your browser")
+    with open(DASHBOARD_PATH, "w") as f:
+        f.write(payload)
+    print(f"Wrote {DASHBOARD_PATH}")
+    print("(HA Script will fire lovelace_updated — refresh your browser)")
 
 
-def deploy_file(dashboard: dict) -> None:
+def write_file(dashboard: dict) -> None:
     payload = json.dumps(dashboard, indent=2, ensure_ascii=False)
     with open(OUTPUT_FILE, "w") as f:
         f.write(payload)
     print(f"Wrote {OUTPUT_FILE}")
     print()
     print("Next steps — pick one:")
-    print("  A) Raw Config Editor:")
-    print("     Settings → Dashboards → HVAC → ⋮ → Edit → Raw Config Editor")
-    print("     Paste the contents of the generated file.")
-    print()
-    print("  B) SSH deploy (if you have SSH access to HA):")
-    print(f"     python3 generate_dashboard.py --ssh user@ha-host --ssh-key ~/.ssh/id_rsa")
+    print("  A) Settings → Dashboards → HVAC → ⋮ → Edit → Raw Config Editor, paste file contents")
+    print("  B) python3 generate_dashboard.py --ssh user@ha-host --ssh-key ~/.ssh/id_rsa")
+
+
+def deploy_ssh(dashboard: dict) -> None:
+    payload = json.dumps(dashboard, indent=2, ensure_ascii=False)
+    encoded = base64.b64encode(payload.encode()).decode()
+    cmd = ["ssh"]
+    if SSH_KEY:
+        cmd += ["-i", SSH_KEY]
+    cmd += [SSH_TARGET, f"echo '{encoded}' | base64 -d | sudo tee {DASHBOARD_PATH} > /dev/null"]
+    subprocess.run(cmd, check=True)
+    print(f"Wrote {DASHBOARD_PATH} on {SSH_TARGET}")
+    ha_post("/api/events/lovelace_updated", {})
+    print("Fired lovelace_updated — refresh your browser")
 
 
 # ---------------------------------------------------------------------------
@@ -399,42 +425,47 @@ def deploy_file(dashboard: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("Fetching entity states from HA...")
-    states = ha_get("/api/states")
-    print(f"  {len(states)} entities")
-
-    print("Discovering zones...")
-    zones = discover_zones(states)
-    for z in zones:
-        floor = z["attrs"].get("floor") or "no floor"
-        print(f"  • {z['title']} (slug={z['slug']}, floor={floor})")
+    if LOCAL_MODE:
+        print("Local mode — reading HA storage files directly (no token needed)")
+        entries = local_read_config_entries()
+        registry = local_read_entity_registry()
+        zones = local_discover_zones(entries, registry)
+        thermostat = local_get_thermostat(entries)
+    else:
+        print("Remote mode — fetching from HA REST API...")
+        states = ha_get("/api/states")
+        print(f"  {len(states)} entities")
+        zones = remote_discover_zones(states)
+        thermostat = remote_get_thermostat(states)
 
     if not zones:
-        print("  No zones found. Check that adaptive_hvac is loaded.", file=sys.stderr)
+        print("Warning: no zones found.", file=sys.stderr)
+    for z in zones:
+        floor = z["attrs"].get("floor") or "no floor"
+        print(f"  • {z['title']} (floor={floor})")
 
-    print("Building dashboard...")
-    dashboard = build_dashboard(states)
+    dashboard = build_dashboard(zones, thermostat)
     card_count = len(dashboard["data"]["config"]["views"][0]["cards"])
-    print(f"  {len(zones)} zone cards, {card_count} total cards")
+    print(f"Building dashboard — {len(zones)} zones, {card_count} cards total")
 
     if DRY_RUN:
-        cards = dashboard["data"]["config"]["views"][0]["cards"]
-        for i, c in enumerate(cards):
+        for i, c in enumerate(dashboard["data"]["config"]["views"][0]["cards"]):
             if c["type"] == "horizontal-stack":
-                names = [x.get("title", "?") for x in c.get("cards", [])]
-                print(f"  [{i}] horizontal-stack: {names}")
+                print(f"  [{i}] stack: {[x.get('title') for x in c.get('cards', [])]}")
             else:
-                print(f"  [{i}] {c['type']}: {c.get('title', '')}")
+                print(f"  [{i}] {c['type']}: {c.get('title', c.get('name', ''))}")
         return
 
     if TO_STDOUT:
         print(json.dumps(dashboard, indent=2, ensure_ascii=False))
         return
 
-    if SSH_TARGET:
+    if LOCAL_MODE:
+        write_local(dashboard)
+    elif SSH_TARGET:
         deploy_ssh(dashboard)
     else:
-        deploy_file(dashboard)
+        write_file(dashboard)
 
 
 if __name__ == "__main__":
