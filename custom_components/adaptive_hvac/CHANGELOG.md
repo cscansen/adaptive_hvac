@@ -4,6 +4,13 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.25] - 2026-06-08
+
+### Added
+- **Cover entities supported as window sensors** — the zone window sensor selector now accepts
+  both `binary_sensor` and `cover` domains. Cover entities report `open`/`closed` rather than
+  `on`/`off`; the open-window check now matches either state so both types work correctly.
+
 ## [0.3.24] - 2026-06-08
 
 ### Fixed

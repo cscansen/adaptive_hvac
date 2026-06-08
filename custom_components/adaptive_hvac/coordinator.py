@@ -129,7 +129,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
             entities = [entities] if entities else []
 
         return any(
-            self.hass.states.is_state(e, "on")
+            self.hass.states.is_state(e, "on") or self.hass.states.is_state(e, "open")
             for e in entities
         )
 
