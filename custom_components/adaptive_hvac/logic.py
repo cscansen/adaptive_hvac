@@ -275,7 +275,7 @@ def decide_system(
 
     # Window open gate — block cooling if any zone reports a window open
     if season == "summer":
-        open_zones = [z.zone_name for z in sys_state.zone_states if z.window_open]
+        open_zones = [z.zone_name for z in sys_state.zone_states if z.window_open and z.affects_thermostat]
         if open_zones:
             zone_list = ", ".join(open_zones)
             reasoning.append(f"AC BLOCKED: window open in {zone_list}")

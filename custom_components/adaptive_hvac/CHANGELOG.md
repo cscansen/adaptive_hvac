@@ -4,6 +4,14 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.18] - 2026-06-08
+
+### Fixed
+- **Garage window sensor no longer blocks AC** — the window open gate in `decide_system()` was
+  checking all zones regardless of `affects_thermostat`. Zones with `affects_thermostat=OFF`
+  (e.g. garage) now correctly have no influence on the AC gate, consistent with the v0.3.13
+  design intent stated in the changelog.
+
 ## [0.3.17] - 2026-06-08
 
 ### Changed
