@@ -113,9 +113,18 @@ class ZoneStatusSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         decision = self.coordinator.last_decision
+        cfg = self.coordinator.zone_config
+        base = {
+            "temp_sensors": cfg.get("temp_sensors", []),
+            "fans": cfg.get("fans", []),
+            "floor": cfg.get("floor", ""),
+            "affects_thermostat": cfg.get("affects_thermostat", True),
+            "zone_target_temp": cfg.get("zone_target_temp", 72.0),
+        }
         if not decision:
-            return {}
+            return base
         return {
+            **base,
             "mode": decision.mode,
             "thermal_request": decision.thermal_request,
             "urgency": decision.urgency,
