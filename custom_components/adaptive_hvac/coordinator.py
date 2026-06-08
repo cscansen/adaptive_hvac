@@ -32,6 +32,7 @@ from .const import (
     DEFAULT_AFFECTS_THERMOSTAT,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
+    DEFAULT_SENSOR_STALENESS_MINUTES,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -93,6 +94,20 @@ class ZoneCoordinator(DataUpdateCoordinator):
                     _LOGGER.warning(f"Zone {self.zone_name}: invalid temp state '{state.state}' from {entity_id}")
 
         return sum(temps) / len(temps) if temps else 0.0
+
+    def stale_sensors(self, threshold_minutes: int = 60) -> list[str]:
+        """Return entity IDs of temp sensors that are missing, unavailable, or haven't updated within threshold."""
+        cutoff = dt_util.utcnow() - timedelta(minutes=threshold_minutes)
+        stale = []
+        for entity_id in self.zone_config.get("temp_sensors", []):
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                stale.append(entity_id)
+            elif state.state in ("unavailable", "unknown"):
+                stale.append(entity_id)
+            elif state.last_updated < cutoff:
+                stale.append(entity_id)
+        return stale
 
     def _read_humidity(self) -> Optional[float]:
         """Read humidity sensor(s) — averaged if multiple."""
@@ -435,13 +450,25 @@ class SystemCoordinator(DataUpdateCoordinator):
             self.last_decision = decision
             return decision
 
-        # Degraded-mode detection: all zones in sensor failsafe for N consecutive cycles
+        # Sensor health check: collect stale/unavailable sensors across all zones
+        staleness_threshold = int(self.system_config.get(
+            "sensor_staleness_minutes", DEFAULT_SENSOR_STALENESS_MINUTES
+        ))
+        stale_by_zone: dict[str, list[str]] = {}
+        for coord in self.zone_coordinators:
+            stale = coord.stale_sensors(staleness_threshold)
+            if stale:
+                stale_by_zone[coord.zone_name] = stale
+
+        # Degraded-mode detection: all zones in sensor failsafe OR stale sensors found
         all_failsafe = all(d.mode == "sensor_failsafe" for d in zone_decisions)
-        if all_failsafe:
+        system_degraded = all_failsafe or bool(stale_by_zone)
+
+        if system_degraded:
             self._failsafe_cycle_count += 1
             if self._failsafe_cycle_count >= 2 and not self._degraded_mode:
                 self._degraded_mode = True
-                _LOGGER.warning("Adaptive HVAC: all zone sensors unavailable — handing thermostat back to auto")
+                _LOGGER.warning("Adaptive HVAC: sensor degradation detected — handing thermostat back to auto")
                 thermostat = self.system_config.get("thermostat_entity")
                 if thermostat:
                     try:
@@ -451,27 +478,50 @@ class SystemCoordinator(DataUpdateCoordinator):
                         )
                     except Exception:
                         _LOGGER.warning("Adaptive HVAC: thermostat does not support 'auto' mode — leaving as-is")
+
+                if stale_by_zone:
+                    stale_lines = "\n".join(
+                        f"- **{zone}**: {', '.join(sensors)}"
+                        for zone, sensors in stale_by_zone.items()
+                    )
+                    msg = (
+                        f"Stale or unavailable sensors detected:\n{stale_lines}\n\n"
+                        "The thermostat has been returned to auto mode. "
+                        "Adaptive HVAC will resume automatically when sensors recover."
+                    )
+                else:
+                    msg = (
+                        "All zone sensors have been unavailable for 2+ evaluation cycles. "
+                        "The thermostat has been returned to auto mode and will govern itself. "
+                        "Adaptive HVAC will resume automatically when sensors recover."
+                    )
+
                 await self.hass.services.async_call(
                     "persistent_notification", "create", {
                         "title": "Adaptive HVAC — Degraded",
-                        "message": (
-                            "All zone sensors have been unavailable for 2+ evaluation cycles. "
-                            "The thermostat has been returned to auto mode and will govern itself. "
-                            "Adaptive HVAC will resume automatically when sensors recover."
-                        ),
+                        "message": msg,
                         "notification_id": "adaptive_hvac_degraded",
                     }
                 )
+
+            if all_failsafe:
+                reason = f"All zone sensors unavailable for {self._failsafe_cycle_count} cycle(s) — thermostat in auto"
+            else:
+                stale_summary = "; ".join(
+                    f"{z}: {', '.join(s)}" for z, s in stale_by_zone.items()
+                )
+                reason = f"Stale sensors ({self._failsafe_cycle_count} cycle(s)): {stale_summary}"
+
             decision = SystemDecision(
                 thermostat_hvac_mode="off",
-                status=f"SYSTEM: DEGRADED — all sensors unavailable ({self._failsafe_cycle_count} cycles)",
-                reasoning=[f"All zone sensors unavailable for {self._failsafe_cycle_count} cycle(s) — thermostat in auto"],
+                status=f"SYSTEM: DEGRADED ({self._failsafe_cycle_count} cycles)",
+                reasoning=[reason],
             )
             self.last_decision = decision
             return decision
         else:
             if self._degraded_mode:
-                _LOGGER.info("Adaptive HVAC: zone sensors recovered — resuming normal control")
+                _LOGGER.info("Adaptive HVAC: sensors recovered — resuming normal control")
                 self._degraded_mode = False
                 await self.hass.services.async_call(
                     "persistent_notification", "dismiss",

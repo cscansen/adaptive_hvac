@@ -4,6 +4,17 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.21] - 2026-06-08
+
+### Added
+- **Stale sensor detection and failover** — each zone coordinator checks its configured temp
+  sensors every evaluation cycle. A sensor is flagged stale if it is missing, in
+  `unavailable`/`unknown` state, or has not updated its value within `sensor_staleness_minutes`
+  (default 60 min). Stale sensors trigger the same 2-cycle degraded-mode failover as total
+  sensor loss: thermostat is set to `auto` after 2 consecutive cycles with any stale sensor,
+  a persistent HA notification lists exactly which sensors in which zones are affected, and
+  normal control resumes automatically when all sensors recover.
+
 ## [0.3.20] - 2026-06-08
 
 ### Added
