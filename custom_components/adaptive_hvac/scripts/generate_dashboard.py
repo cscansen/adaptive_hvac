@@ -132,11 +132,15 @@ def local_discover_zones(entries: list[dict], entity_registry: list[dict]) -> li
     return zones
 
 
-def local_get_thermostat(entries: list[dict]) -> str:
+def local_get_system_cfg(entries: list[dict]) -> dict:
     system = next(
         (e for e in entries if local_get_config(e).get("entry_type") == "system"), {}
     )
-    return local_get_config(system).get("thermostat_entity", "climate.downstairs_thermostat")
+    cfg = local_get_config(system)
+    return {
+        "thermostat": cfg.get("thermostat_entity", "climate.downstairs_thermostat"),
+        "outdoor": cfg.get("outdoor_temp_sensor") or cfg.get("weather_entity", "weather.home"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +197,13 @@ def remote_discover_zones(states: list[dict]) -> list[dict]:
     return zones
 
 
-def remote_get_thermostat(states: list[dict]) -> str:
+def remote_get_system_cfg(states: list[dict]) -> dict:
     system = next((s for s in states if s["entity_id"] == "sensor.adaptive_hvac_status"), {})
-    return system.get("attributes", {}).get("thermostat_entity", "climate.downstairs_thermostat")
+    attrs = system.get("attributes", {})
+    return {
+        "thermostat": attrs.get("thermostat_entity", "climate.downstairs_thermostat"),
+        "outdoor": attrs.get("outdoor_temp_sensor") or attrs.get("weather_entity", "weather.home"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -228,8 +236,15 @@ def markdown_card(zones: list[dict]) -> dict:
     return {"type": "markdown", "content": "\n".join(lines)}
 
 
-def system_glance_card(thermostat: str) -> dict:
+def system_glance_card(sys_cfg: dict) -> dict:
+    thermostat = sys_cfg["thermostat"]
+    outdoor = sys_cfg["outdoor"]
     base = thermostat.removeprefix("climate.")
+    outdoor_entry = (
+        {"entity": outdoor, "name": "Outdoor", "attribute": "temperature", "icon": "mdi:weather-partly-cloudy"}
+        if outdoor.startswith("weather.")
+        else {"entity": outdoor, "name": "Outdoor", "icon": "mdi:weather-partly-cloudy"}
+    )
     return {
         "type": "glance",
         "title": "System",
@@ -241,7 +256,7 @@ def system_glance_card(thermostat: str) -> dict:
             {"entity": thermostat, "name": "Setpoint", "attribute": "temperature", "icon": "mdi:thermometer"},
             {"entity": f"sensor.{base}_temperature", "name": "Therm Temp", "icon": "mdi:thermometer-lines"},
             {"entity": f"sensor.{base}_humidity", "name": "Humidity", "icon": "mdi:water-percent"},
-            {"entity": "sensor.adaptive_hvac_outdoor_temp", "name": "Outdoor", "icon": "mdi:weather-partly-cloudy"},
+            outdoor_entry,
             {"entity": thermostat, "name": "Fan", "attribute": "fan_mode", "icon": "mdi:fan"},
         ],
     }
@@ -362,11 +377,12 @@ def rebuild_dashboard_button() -> dict:
 # Dashboard assembler
 # ---------------------------------------------------------------------------
 
-def build_dashboard(zones: list[dict], thermostat: str) -> dict:
+def build_dashboard(zones: list[dict], sys_cfg: dict) -> dict:
+    thermostat = sys_cfg["thermostat"]
     z_cards = [zone_card(z) for z in zones]
     cards = [
         markdown_card(zones),
-        system_glance_card(thermostat),
+        system_glance_card(sys_cfg),
         *zone_pairs(z_cards),
         floor_temps_glance(zones),
         history_graph_card(thermostat),
@@ -430,13 +446,13 @@ def main() -> None:
         entries = local_read_config_entries()
         registry = local_read_entity_registry()
         zones = local_discover_zones(entries, registry)
-        thermostat = local_get_thermostat(entries)
+        sys_cfg = local_get_system_cfg(entries)
     else:
         print("Remote mode — fetching from HA REST API...")
         states = ha_get("/api/states")
         print(f"  {len(states)} entities")
         zones = remote_discover_zones(states)
-        thermostat = remote_get_thermostat(states)
+        sys_cfg = remote_get_system_cfg(states)
 
     if not zones:
         print("Warning: no zones found.", file=sys.stderr)
@@ -444,7 +460,8 @@ def main() -> None:
         floor = z["attrs"].get("floor") or "no floor"
         print(f"  • {z['title']} (floor={floor})")
 
-    dashboard = build_dashboard(zones, thermostat)
+    print(f"  thermostat={sys_cfg['thermostat']}, outdoor={sys_cfg['outdoor']}")
+    dashboard = build_dashboard(zones, sys_cfg)
     card_count = len(dashboard["data"]["config"]["views"][0]["cards"])
     print(f"Building dashboard — {len(zones)} zones, {card_count} cards total")
 
