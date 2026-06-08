@@ -4,6 +4,16 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.20] - 2026-06-08
+
+### Added
+- **Thermostat failover when all sensors go unavailable** — if every zone reports `SENSOR FAILSAFE`
+  for 2 consecutive evaluation cycles (6 minutes), the integration enters degraded mode:
+  the thermostat is set to `auto` so it governs itself via its internal schedule, and a
+  persistent HA notification is fired. When any zone sensor recovers, normal adaptive
+  control resumes automatically and the notification is dismissed. The startup transient
+  (sensors unavailable for <3 min after HA restart) does not trigger degraded mode.
+
 ## [0.3.19] - 2026-06-08
 
 ### Fixed
