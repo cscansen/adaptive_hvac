@@ -32,7 +32,6 @@ from .const import (
     DEFAULT_AFFECTS_THERMOSTAT,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
-    DEFAULT_SENSOR_STALENESS_MINUTES,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -95,17 +94,14 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
         return sum(temps) / len(temps) if temps else 0.0
 
-    def stale_sensors(self, threshold_minutes: int = 60) -> list[str]:
-        """Return entity IDs of temp sensors that are missing, unavailable, or haven't updated within threshold."""
-        cutoff = dt_util.utcnow() - timedelta(minutes=threshold_minutes)
+    def stale_sensors(self) -> list[str]:
+        """Return entity IDs of temp sensors that are missing or not reporting (unavailable/unknown)."""
         stale = []
         for entity_id in self.zone_config.get("temp_sensors", []):
             state = self.hass.states.get(entity_id)
             if state is None:
                 stale.append(entity_id)
             elif state.state in ("unavailable", "unknown"):
-                stale.append(entity_id)
-            elif state.last_updated < cutoff:
                 stale.append(entity_id)
         return stale
 
@@ -450,13 +446,10 @@ class SystemCoordinator(DataUpdateCoordinator):
             self.last_decision = decision
             return decision
 
-        # Sensor health check: collect stale/unavailable sensors across all zones
-        staleness_threshold = int(self.system_config.get(
-            "sensor_staleness_minutes", DEFAULT_SENSOR_STALENESS_MINUTES
-        ))
+        # Sensor health check: collect unavailable/missing sensors across all zones
         stale_by_zone: dict[str, list[str]] = {}
         for coord in self.zone_coordinators:
-            stale = coord.stale_sensors(staleness_threshold)
+            stale = coord.stale_sensors()
             if stale:
                 stale_by_zone[coord.zone_name] = stale
 
