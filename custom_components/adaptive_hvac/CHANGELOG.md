@@ -4,6 +4,16 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.24] - 2026-06-08
+
+### Fixed
+- **False degraded-mode on stable sensors** — the stale-sensor check was using `last_updated` to
+  detect sensors that hadn't reported within 60 minutes. For passive BLE sensors (e.g. Govee
+  hygrometers), HA only writes a new state when the value changes, so a room holding a steady
+  temperature would be falsely flagged as stale after an hour. The time-based check has been
+  removed entirely: a sensor is now only considered non-reporting if HA marks it `unavailable`
+  or `unknown`, which is the correct signal for a genuinely dead or disconnected sensor.
+
 ## [0.3.23] - 2026-06-08
 
 ### Fixed
