@@ -72,6 +72,10 @@ DEFAULT_WINTER_END_MONTH = 4     # April
 # System — Upstairs demand boost: lower AC setpoint by this many °F when zones request cooling
 DEFAULT_UPSTAIRS_DEMAND_BOOST = 1.0  # °F
 
+# System — Floor circulation: run thermostat fan when floor temp differential exceeds this
+DEFAULT_FAN_CIRCULATION_DELTA = 2.0  # °F
+CONF_FAN_CIRCULATION_DELTA = "fan_circulation_delta"
+
 # System — Whole-house fan entity (thermostat fan mode)
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 

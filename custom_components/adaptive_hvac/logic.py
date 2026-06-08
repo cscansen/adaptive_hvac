@@ -79,6 +79,8 @@ class SystemConfig:
     heat_exterior_threshold: float = 60.0
     # Upstairs demand boost: lower AC setpoint by this many °F when zones request cooling
     upstairs_demand_boost: float = 0.0
+    # Floor circulation: run thermostat fan when any two floors differ by this many °F
+    fan_circulation_delta: float = 2.0
 
 
 def decide_zone(
@@ -244,7 +246,10 @@ def decide_system(
             reasoning=["System paused via switch"],
         )
 
-    # Emergency requests bypass gating
+    # Floor circulation fan mode — computed before gating so it applies on all off paths
+    fan_mode, fan_reasoning = _floor_fan_mode(sys_state.zone_states, cfg, reasoning)
+
+    # Emergency requests bypass gating (fan stays auto — HVAC fan already runs with compressor/furnace)
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
     emergency_heat = any(d.mode == "emergency_heating" for d in zone_decisions)
 
@@ -276,9 +281,10 @@ def decide_system(
             reasoning.append(f"AC BLOCKED: window open in {zone_list}")
             return SystemDecision(
                 thermostat_hvac_mode="off",
+                whole_house_fan_mode=fan_mode,
                 season=season,
                 status=f"SYSTEM: OFF (window open — {zone_list})",
-                reasoning=reasoning,
+                reasoning=reasoning + fan_reasoning,
             )
 
     # Collect zone requests
@@ -338,17 +344,19 @@ def decide_system(
                 return SystemDecision(
                     thermostat_hvac_mode="cool",
                     thermostat_setpoint=adjusted_setpoint,
+                    whole_house_fan_mode=fan_mode,
                     season=season,
                     status=f"SYSTEM: COOL → {adjusted_setpoint:.0f}°F | {zone_statuses}",
-                    reasoning=reasoning,
+                    reasoning=reasoning + fan_reasoning,
                 )
 
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
         return SystemDecision(
             thermostat_hvac_mode="off",
+            whole_house_fan_mode=fan_mode,
             season=season,
             status=f"SYSTEM: OFF (summer, no cooling) | {zone_statuses}",
-            reasoning=reasoning,
+            reasoning=reasoning + fan_reasoning,
         )
 
     elif season == "winter":
@@ -366,9 +374,10 @@ def decide_system(
                 return SystemDecision(
                     thermostat_hvac_mode="heat",
                     thermostat_setpoint=adjusted_setpoint,
+                    whole_house_fan_mode=fan_mode,
                     season=season,
                     status=f"SYSTEM: HEAT → {adjusted_setpoint:.0f}°F | {zone_statuses}",
-                    reasoning=reasoning,
+                    reasoning=reasoning + fan_reasoning,
                 )
             else:
                 reasoning.append(f"Heat BLOCKED: outdoor {outdoor:.1f}°F > {cfg.heat_exterior_threshold:.1f}°F")
@@ -376,18 +385,59 @@ def decide_system(
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
         return SystemDecision(
             thermostat_hvac_mode="off",
+            whole_house_fan_mode=fan_mode,
             season=season,
             status=f"SYSTEM: OFF (winter, no heating) | {zone_statuses}",
-            reasoning=reasoning,
+            reasoning=reasoning + fan_reasoning,
         )
 
     # Fallback (shouldn't happen with binary season model)
     return SystemDecision(
         thermostat_hvac_mode="off",
+        whole_house_fan_mode=fan_mode,
         season=season,
         status="SYSTEM: OFF",
-        reasoning=reasoning + ["Unknown season — system off"],
+        reasoning=reasoning + fan_reasoning + ["Unknown season — system off"],
     )
+
+
+def _floor_fan_mode(
+    zone_states: list[ZoneState],
+    cfg: SystemConfig,
+    base_reasoning: list[str],
+) -> tuple[str, list[str]]:
+    """
+    Determine whole-house fan mode based on floor temperature differential.
+
+    Groups zones by their floor ID (zones with no floor are excluded).
+    If any two floors differ by >= cfg.fan_circulation_delta, returns "on".
+    Otherwise returns "auto".
+    """
+    floors: dict[str, list[float]] = {}
+    for z in zone_states:
+        if z.floor and z.temp > 0:
+            floors.setdefault(z.floor, []).append(z.temp)
+
+    if len(floors) < 2:
+        return "auto", []
+
+    floor_avgs = {f: sum(temps) / len(temps) for f, temps in floors.items()}
+    max_avg = max(floor_avgs.values())
+    min_avg = min(floor_avgs.values())
+    delta = max_avg - min_avg
+
+    if delta >= cfg.fan_circulation_delta:
+        hot_floor = max(floor_avgs, key=floor_avgs.__getitem__)
+        cool_floor = min(floor_avgs, key=floor_avgs.__getitem__)
+        reasoning = [
+            f"Floor circulation: {hot_floor} {floor_avgs[hot_floor]:.1f}°F vs "
+            f"{cool_floor} {floor_avgs[cool_floor]:.1f}°F "
+            f"(Δ{delta:.1f}°F ≥ {cfg.fan_circulation_delta:.1f}°F threshold) — fan ON"
+        ]
+        return "on", reasoning
+
+    floor_summary = ", ".join(f"{f} {avg:.1f}°F" for f, avg in floor_avgs.items())
+    return "auto", [f"Floor circulation: Δ{delta:.1f}°F < threshold ({floor_summary}) — fan auto"]
 
 
 def annotate_zone_decisions(

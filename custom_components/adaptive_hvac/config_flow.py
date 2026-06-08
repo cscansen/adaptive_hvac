@@ -58,6 +58,7 @@ def _zone_schema_dict(defaults: dict) -> dict:
             selector.NumberSelectorConfig(min=10, max=100, step=5, unit_of_measurement="%")
         ),
         vol.Optional("affects_thermostat", default=defaults.get("affects_thermostat", True)): selector.BooleanSelector(),
+        vol.Optional("floor", default=defaults.get("floor", "")): selector.FloorSelector(),
     }
 
 
@@ -298,6 +299,9 @@ class ZoneOptionsFlow(config_entries.OptionsFlow):
                 d[field] = []
             elif isinstance(val, str):
                 d[field] = [val]
+        # Normalize floor (optional string — None → "")
+        if d.get("floor") is None:
+            d["floor"] = ""
 
         return self.async_show_form(
             step_id="init",

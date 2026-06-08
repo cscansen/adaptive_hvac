@@ -31,6 +31,7 @@ from .const import (
     DEFAULT_AUTO_CONTROL_ENABLED,
     DEFAULT_AFFECTS_THERMOSTAT,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
+    DEFAULT_FAN_CIRCULATION_DELTA,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -476,6 +477,7 @@ class SystemCoordinator(DataUpdateCoordinator):
             cool_interior_override_delta=float(self.system_config.get("cool_interior_override_delta", DEFAULT_COOL_INTERIOR_OVERRIDE_DELTA)),
             heat_exterior_threshold=float(self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)),
             upstairs_demand_boost=self._effective_setpoint("upstairs_demand_boost", DEFAULT_UPSTAIRS_DEMAND_BOOST),
+            fan_circulation_delta=self._effective_setpoint("fan_circulation_delta", DEFAULT_FAN_CIRCULATION_DELTA),
         )
 
         decision = decide_system(sys_state, zone_decisions, cfg)
