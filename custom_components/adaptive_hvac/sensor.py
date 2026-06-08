@@ -54,10 +54,16 @@ class SystemStatusSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
+        cfg = self.coordinator.system_config
+        base = {
+            "thermostat_entity": cfg.get("thermostat_entity", ""),
+            "outdoor_temp_sensor": cfg.get("outdoor_temp_sensor") or cfg.get("weather_entity", ""),
+        }
         decision = self.coordinator.last_decision
         if not decision:
-            return {}
+            return base
         return {
+            **base,
             "thermostat_mode": decision.thermostat_hvac_mode,
             "thermostat_setpoint": decision.thermostat_setpoint,
             "whole_house_fan": decision.whole_house_fan_mode,
