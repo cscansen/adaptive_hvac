@@ -16,6 +16,7 @@ from .const import (
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
+    DEFAULT_UPSTAIRS_DEMAND_BOOST,
 )
 from .coordinator import SystemCoordinator
 
@@ -38,6 +39,7 @@ async def async_setup_entry(
         EmergencyHeatThresholdNumber(coordinator),
         EmergencyCoolThresholdNumber(coordinator),
         CoolExteriorThresholdNumber(coordinator),
+        UpstairsDemandBoostNumber(coordinator),
     ])
 
 
@@ -52,11 +54,23 @@ class _BaseSystemNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
 
     @property
     def native_value(self) -> float:
+        # Read options first so displayed value matches what _effective_setpoint dispatches.
+        if self.coordinator._config_entry:
+            val = self.coordinator._config_entry.options.get(self._config_key)
+            if val is not None:
+                return float(val)
         return float(self.coordinator.system_config.get(self._config_key, self._default))
 
     async def async_set_native_value(self, value: float) -> None:
         self.coordinator.system_config[self._config_key] = value
+        if self.coordinator._config_entry:
+            new_options = {**self.coordinator._config_entry.options, self._config_key: value}
+            self.coordinator._suppress_setpoint_reload = True
+            self.coordinator.hass.config_entries.async_update_entry(
+                self.coordinator._config_entry, options=new_options
+            )
         self.async_write_ha_state()
+        await self.coordinator.async_refresh()
 
 
 class ACSetpointNumber(_BaseSystemNumber):
@@ -147,3 +161,18 @@ class CoolExteriorThresholdNumber(_BaseSystemNumber):
         self._attr_native_min_value = 40.0
         self._attr_native_max_value = 80.0
         self._attr_native_step = 1.0
+
+
+class UpstairsDemandBoostNumber(_BaseSystemNumber):
+    """Degrees to lower AC setpoint when upstairs zones request cooling."""
+    _config_key = "upstairs_demand_boost"
+    _default = DEFAULT_UPSTAIRS_DEMAND_BOOST
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_upstairs_demand_boost"
+        self._attr_name = "Adaptive HVAC Upstairs Demand Boost"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 0.0
+        self._attr_native_max_value = 2.0
+        self._attr_native_step = 0.5

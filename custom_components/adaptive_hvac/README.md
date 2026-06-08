@@ -18,8 +18,9 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 - Room unoccupied → fan off regardless (occupancy never blocks the thermostat)
 
 **System (thermostat):**
-- Summer: run AC if any room needs it AND outdoor temp ≥ exterior threshold (default 60°F, raise to 65–68°F for "windows open" weather) — or any room is 5°F above its target (indoor override bypasses the threshold)
+- Summer: run AC if any room needs it AND outdoor temp ≥ exterior threshold (default 60°F) AND outdoor temp ≥ zone comfort target — if it's cooler outside than the room's target, open windows instead; no AC
 - Summer: AC also blocked if any zone's window sensor is open (actual contact sensor; emergencies bypass this)
+- Any room 5°F above its target bypasses the exterior threshold gate (interior override)
 - Winter: run heat if any room needs it AND outdoor temp ≤ 60°F
 - All thresholds are configurable; exterior threshold is a live dashboard slider
 
@@ -38,7 +39,8 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Thermostat | — | Required. Your `climate` entity |
-| Weather | — | Optional. Used for outdoor temp |
+| Outdoor temp sensor | — | Optional. Local `sensor` entity; takes priority over weather entity for real-time readings |
+| Weather | — | Optional. Outdoor temp fallback if no local sensor configured |
 | Sleep posture | — | Optional. Tracked but not used for control |
 | Occupancy sensors | — | Optional. For future setback (not yet active) |
 | AC setpoint | 68°F | What to cool to |
@@ -79,6 +81,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | `switch.adaptive_hvac_active` | Enable/disable the integration |
 | `switch.adaptive_hvac_manual_override` | Pause all automation |
 | `number.adaptive_hvac_ac_setpoint` | AC setpoint (live adjustable) |
+| `number.adaptive_hvac_upstairs_demand_boost` | °F to subtract from AC setpoint when any zone calls for cooling (0–2°F, default 1°F) |
 | `number.adaptive_hvac_cool_exterior_threshold` | Outdoor temp below which AC is blocked (live adjustable, 40–80°F) |
 | `number.adaptive_hvac_heat_setpoint` | Heat setpoint (live adjustable) |
 | `number.adaptive_hvac_heat_threshold` | Heat trigger temp (live adjustable) |
@@ -95,7 +98,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 ## Fan lock
 
-When a user manually turns on, adjusts, or turns off a ceiling fan, the integration detects the change (via `context.user_id`) and claims that zone's fans:
+When a user manually turns on, adjusts, or turns off a ceiling fan, the integration detects the change and claims that zone's fans:
 
 - **Fan turned ON** — integration preserves your speed and won't override it
 - **Fan adjusted** — new speed stored, integration continues to leave it alone
@@ -103,11 +106,13 @@ When a user manually turns on, adjusts, or turns off a ceiling fan, the integrat
 - **Midnight** — all fan locks clear automatically; normal control resumes
 - **Manual release** — toggle `switch.adaptive_hvac_{zone}_fan_locked` OFF at any time to release immediately
 
-> **Physical switch presses** (wall dimmer, etc.) have no HA context — they are not detected and do not set the lock. The integration can still override a fan set via physical switch.
+Physical wall switch presses are detected and set the fan lock, same as app or UI adjustments.
 
 ## Thermostat setpoint ownership
 
-When you adjust the thermostat setpoint from a physical control, the app, or HomeKit, the integration detects the change and adopts it as the new target for the current season. It persists across restarts. When the season changes (e.g., summer → winter), it resets to your configured default so you don't carry a summer cooling target into winter.
+When you adjust the thermostat setpoint from the **HA app or UI**, the integration adopts it as the new target for the current season and persists it across restarts. Season change resets to your configured default.
+
+Use the **`number.adaptive_hvac_ac_setpoint` dashboard slider** as the primary way to adjust the cooling target — it persists immediately without waiting for a thermostat interaction.
 
 ## Diagnosing decisions
 
