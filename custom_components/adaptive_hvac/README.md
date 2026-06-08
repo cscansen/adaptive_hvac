@@ -6,8 +6,9 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 - Sets the thermostat to **cool** when any room gets too warm, **heat** when any room gets too cold
 - Controls **ceiling fans per room** — on when the room is above your target temp, off when it's not
+- Circulates air between floors using the whole-house thermostat fan when temperature imbalance exceeds a threshold
 - Respects **who owns what**: if you manually set a fan, the integration leaves it alone until midnight
-- Lets you (or Tia) adjust the thermostat setpoint from the faceplate or app — it adopts your setting and keeps using it
+- Falls back to standalone thermostat control if sensors stop reporting, then resumes automatically when they recover
 - Never turns the AC off on a cool-but-sunny day when it's 80°F inside (the bug that prompted this rewrite)
 
 ## How it decides
@@ -19,10 +20,22 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 **System (thermostat):**
 - Summer: run AC if any room needs it AND outdoor temp ≥ exterior threshold (default 60°F) AND outdoor temp ≥ zone comfort target — if it's cooler outside than the room's target, open windows instead; no AC
-- Summer: AC also blocked if any zone's window sensor is open (actual contact sensor; emergencies bypass this)
+- Summer: AC also blocked if any zone's window sensor is open (only zones with `affects_thermostat = ON`; emergencies bypass)
 - Any room 5°F above its target bypasses the exterior threshold gate (interior override)
+- When any zone requests cooling, the AC setpoint is lowered by the **demand boost** amount (default 1°F) to push harder
 - Winter: run heat if any room needs it AND outdoor temp ≤ 60°F
-- All thresholds are configurable; exterior threshold is a live dashboard slider
+- All thresholds are configurable via dashboard sliders; no restart required
+
+**Floor fan circulation:**
+- Zones are grouped by their HA floor assignment
+- When the average temperature difference between floors exceeds the **floor circulation delta** (default 2°F), the thermostat fan is set to `on` to circulate air
+- Fan circulation is suppressed when sleep posture is active
+
+**Degraded mode / failover:**
+- If sensors are unavailable or stale for 2 consecutive evaluation cycles (~6 minutes), the integration enters degraded mode
+- The thermostat is set to `auto` so it governs itself via its internal schedule
+- A persistent HA notification lists exactly which sensors are affected
+- Normal control resumes automatically when all sensors recover
 
 ## Installation
 
@@ -39,87 +52,103 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Thermostat | — | Required. Your `climate` entity |
-| Outdoor temp sensor | — | Optional. Local `sensor` entity; takes priority over weather entity for real-time readings |
-| Weather | — | Optional. Outdoor temp fallback if no local sensor configured |
-| Sleep posture | — | Optional. Tracked but not used for control |
-| Occupancy sensors | — | Optional. For future setback (not yet active) |
-| AC setpoint | 68°F | What to cool to |
-| Cool exterior threshold | 60°F | Don't AC if outdoor below this — raise to 65–68°F for "windows open" weather |
-| Cool interior override | 5°F | Bypass exterior threshold if any room is this many °F above its target |
+| Outdoor temp sensor | — | Optional. Local `sensor` entity; takes priority over weather entity |
+| Weather entity | — | Optional. Outdoor temp fallback if no local sensor configured |
+| Sleep posture entity | — | Optional. `input_boolean` or binary sensor; suppresses floor fan circulation when on |
+| Occupancy sensors | — | Optional. Reserved for future setback logic |
+| AC setpoint | 68°F | Target cooling temperature |
+| Upstairs demand boost | 1°F | Lower AC setpoint by this much when any zone calls for cooling (0–2°F) |
+| Cool exterior threshold | 60°F | Don't run AC if outdoor below this |
+| Cool interior override | 5°F | Bypass exterior threshold if any room is this far above its target |
 | Emergency cool threshold | 85°F | Always cool above this regardless of gating |
-| Heat setpoint | 68°F | What to heat to |
+| Heat setpoint | 68°F | Target heating temperature |
 | Heat threshold | 68°F | Zone temp that triggers a heat request |
 | Heat exterior threshold | 60°F | Don't heat if outdoor above this |
-| Emergency heat threshold | 55°F | Always heat below this regardless of gating |
+| Emergency heat threshold | 55°F | Always heat below this |
+| Floor circulation delta | 2°F | Inter-floor temp difference that triggers whole-house fan |
+| Sensor staleness window | 60 min | Flag sensors that haven't reported within this window |
 | Winter start month | October | Calendar month winter begins |
-| Winter end month | April | Calendar month winter ends (summer = everything else) |
+| Winter end month | April | Calendar month winter ends |
 
 ## Zone setup
 
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Zone name | — | Required. Used for entity naming |
+| Floor | — | Optional. Select from HA floor registry; enables floor fan circulation |
 | Temperature sensors | — | Required. Averaged if multiple |
 | Humidity sensor | — | Optional |
-| Window sensor | — | Optional. When open, blocks AC system-wide (emergencies bypass) |
+| Window sensor | — | Optional. When open, blocks AC (only when `affects_thermostat = ON`) |
 | Occupancy sensor | — | Optional. Controls local fan only |
 | Fans | — | Fan entities this zone controls |
 | Zone target temp | 72°F | Fan on above this, fan off at/below |
 | Fan speed | 50% | Speed when fan is running |
+| Affects thermostat | ON | When OFF, zone controls its fans only — never sends thermal requests or blocks AC via window sensor. Use for unconditioned spaces like garages. |
 
-> **Do not add the thermostat's whole-house fan as a zone fan** — occupancy would turn it off incorrectly.
+> **Do not add the thermostat's whole-house fan as a zone fan** — occupancy would turn it off incorrectly. The floor circulation feature manages the whole-house fan automatically.
 
 ## Entities created
 
 **System entry:**
+
 | Entity | Description |
 |--------|-------------|
-| `sensor.adaptive_hvac_status` | Current decision + full reasoning |
-| `sensor.adaptive_hvac_mode` | Thermostat mode (cool/heat/off) |
-| `sensor.adaptive_hvac_season` | Current season (summer/winter) |
-| `select.adaptive_hvac_season_override` | Force summer/winter for testing |
-| `switch.adaptive_hvac_active` | Enable/disable the integration |
+| `sensor.adaptive_hvac_status` | Current decision + full reasoning. Attributes include `thermostat_entity`, `outdoor_temp_sensor`, `thermostat_mode`, `thermostat_setpoint`, `whole_house_fan`, `season`, `reasoning` |
+| `sensor.adaptive_hvac_mode` | Thermostat mode (cool / heat / off) |
+| `sensor.adaptive_hvac_season` | Current season (summer / winter) |
+| `select.adaptive_hvac_season_override` | Force summer / winter for testing |
+| `switch.adaptive_hvac_active` | Enable / disable the integration |
 | `switch.adaptive_hvac_manual_override` | Pause all automation |
 | `number.adaptive_hvac_ac_setpoint` | AC setpoint (live adjustable) |
-| `number.adaptive_hvac_upstairs_demand_boost` | °F to subtract from AC setpoint when any zone calls for cooling (0–2°F, default 1°F) |
-| `number.adaptive_hvac_cool_exterior_threshold` | Outdoor temp below which AC is blocked (live adjustable, 40–80°F) |
+| `number.adaptive_hvac_upstairs_demand_boost` | Setpoint reduction when zones call for cooling (0–2°F) |
+| `number.adaptive_hvac_fan_circulation_delta` | Inter-floor delta that triggers whole-house fan (0.5–5°F) |
+| `number.adaptive_hvac_cool_exterior_threshold` | Outdoor temp gate for AC (live adjustable) |
 | `number.adaptive_hvac_heat_setpoint` | Heat setpoint (live adjustable) |
 | `number.adaptive_hvac_heat_threshold` | Heat trigger temp (live adjustable) |
 | `number.adaptive_hvac_emergency_cool_threshold` | Emergency cool threshold |
 | `number.adaptive_hvac_emergency_heat_threshold` | Emergency heat threshold |
 
 **Each zone entry:**
+
 | Entity | Description |
 |--------|-------------|
-| `sensor.{zone}_hvac_status` | Zone mode and current temp |
-| `sensor.{zone}_temp_trend` | Temperature trend (°F/hr) |
-| `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle (OFF = integration skips this zone entirely) |
+| `sensor.{zone}_hvac_status` | Zone mode and reasoning. Attributes include `temp_sensors`, `fans`, `floor`, `affects_thermostat`, `zone_target_temp`, `mode`, `thermal_request`, `urgency`, `reasoning`, `fan_commands` |
+| `sensor.{zone}_temp_trend` | Temperature trend in °F/hr (30-minute rolling window) |
+| `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle — OFF means the integration skips this zone entirely |
 | `switch.adaptive_hvac_{zone}_fan_locked` | Fan lock — ON means user has claimed the fan; integration hands off until midnight |
 
 ## Fan lock
 
-When a user manually turns on, adjusts, or turns off a ceiling fan, the integration detects the change and claims that zone's fans:
+When a user manually adjusts a ceiling fan, the integration detects the change and claims that zone's fans:
 
 - **Fan turned ON** — integration preserves your speed and won't override it
 - **Fan adjusted** — new speed stored, integration continues to leave it alone
-- **Fan turned OFF** — integration won't turn it back on (suppressed until midnight)
+- **Fan turned OFF** — integration won't turn it back on until midnight
 - **Midnight** — all fan locks clear automatically; normal control resumes
 - **Manual release** — toggle `switch.adaptive_hvac_{zone}_fan_locked` OFF at any time to release immediately
 
-Physical wall switch presses are detected and set the fan lock, same as app or UI adjustments.
+Physical wall switch presses are detected the same as app or UI adjustments.
 
 ## Thermostat setpoint ownership
 
-When you adjust the thermostat setpoint from the **HA app or UI**, the integration adopts it as the new target for the current season and persists it across restarts. Season change resets to your configured default.
+When you adjust the thermostat setpoint from the **HA app or UI**, the integration adopts it as the new target for the current season and persists it across restarts.
 
 Use the **`number.adaptive_hvac_ac_setpoint` dashboard slider** as the primary way to adjust the cooling target — it persists immediately without waiting for a thermostat interaction.
+
+## Dashboard
+
+The integration ships with a dashboard generator that builds a fully populated Lovelace HVAC dashboard from your live zone configuration. No manual editing required; re-run whenever zones are added or removed.
+
+See **[DASHBOARD.md](DASHBOARD.md)** for full setup instructions.
+
+The generated dashboard includes a **Rebuild Dashboard** button that regenerates the dashboard in place without a token — one tap from the UI.
 
 ## Diagnosing decisions
 
 The `sensor.adaptive_hvac_status` entity carries a `reasoning` attribute that shows the full decision tree on every poll:
 
 ```
-Season: summer | Outdoor: 78.0°F | AC allowed: outdoor 78.0°F ≥ 60.0°F
+Season: summer | Outdoor: 78.0°F | AC allowed | Upstairs demand boost: setpoint 68°F → 67°F | SYSTEM: COOL → 67°F
 ```
 
 Force an immediate evaluation:
@@ -127,34 +156,37 @@ Force an immediate evaluation:
 service: adaptive_hvac.force_evaluate
 ```
 
-Or via curl:
-```bash
-curl -s -X POST http://homeassistant.local:8123/api/services/adaptive_hvac/force_evaluate \
-  -H "Authorization: Bearer <your_token>" \
-  -H "Content-Type: application/json" -d '{}'
-```
+Or via the dashboard **Force Evaluate Now** button.
 
 ## Troubleshooting
 
 **System entities show unavailable after install**
-Ensure you are running HA 2024.1.0 or later. The coordinator requires `config_entry` to be passed in `DataUpdateCoordinator.__init__` — older HA versions are not supported.
+Ensure you are running HA 2024.1.0 or later.
 
-**"No zone data available"**
+**"No zone data available" or "Initializing..."**
 Normal for ~3 minutes after startup — the system coordinator polls on a 3-minute cycle. Use Force Evaluate to trigger immediately.
 
 **Zone shows SENSOR FAILSAFE**
-Temperature sensor is returning 0 or unavailable. Check the entity IDs configured for the zone and confirm the sensors are reporting.
+Temperature sensor is returning an invalid value or is unavailable. Check the entity IDs configured for the zone. If the condition persists for 2 cycles, degraded mode activates and the thermostat takes over; a persistent notification lists which sensors are affected.
 
 **AC won't turn on even though it's hot**
 Check `sensor.adaptive_hvac_status` reasoning attribute. Common causes:
-- Outdoor temp below `cool_exterior_threshold` AND no room is 5°F above its target
-- A zone's window sensor is reporting open
+- Outdoor temp below `cool_exterior_threshold` and no room is 5°F above its target
+- A zone's window sensor is reporting open (`affects_thermostat = ON` zones only)
 - `switch.adaptive_hvac_active` is off
 - `switch.adaptive_hvac_manual_override` is on
 
 **Fan not responding**
-- Check zone's auto-control switch (`switch.adaptive_hvac_{zone}_auto`) is ON
-- Check if the fan lock switch (`switch.adaptive_hvac_{zone}_fan_locked`) is ON — toggle it OFF to release
+- Check the zone's auto-control switch (`switch.adaptive_hvac_{zone}_auto`) is ON
+- Check the fan lock switch (`switch.adaptive_hvac_{zone}_fan_locked`) — toggle OFF to release immediately
+
+**Floor fan running when it shouldn't**
+- Reduce the `number.adaptive_hvac_fan_circulation_delta` threshold
+- Check that zones are assigned to the correct HA floor in zone → Configure → Floor
+- Enable your sleep posture entity to suppress circulation at night
+
+**Degraded mode notification keeps firing**
+A sensor is consistently unavailable or stale. Check the affected sensors listed in the notification. Increase `sensor_staleness_minutes` in the system config options if sensors report infrequently by design.
 
 ## License
 

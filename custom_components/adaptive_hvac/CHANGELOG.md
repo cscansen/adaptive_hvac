@@ -4,6 +4,20 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.23] - 2026-06-08
+
+### Fixed
+- **Outdoor temp entity in dashboard generator** — `system_glance_card` was using a hardcoded
+  `sensor.adaptive_hvac_outdoor_temp` entity that doesn't exist. The system status sensor now
+  exposes `thermostat_entity` and `outdoor_temp_sensor` as attributes so the generator can read
+  the correct entity in both `--local` and remote modes. Weather entities receive the `temperature`
+  attribute selector automatically; sensor entities are referenced directly.
+
+### Changed
+- **README overhauled** — documents floor fan circulation, affects_thermostat zone flag, demand
+  boost, sensor failover / degraded mode, sensor staleness, dashboard generator, and all entity
+  attributes. Removed outdated and personal references.
+
 ## [0.3.22] - 2026-06-08
 
 ### Added
