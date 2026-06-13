@@ -1,0 +1,157 @@
+# =========================
+# Master Bedroom - Stable Sensors
+# =========================
+- trigger:
+    - platform: state
+      entity_id:
+        - sensor.meter_pro_89_humidity
+        - sensor.meter_pro_89_temperature
+  sensor:
+    - name: "Master BR Humidity (Stable)"
+      unique_id: master_br_humidity_stable
+      unit_of_measurement: "%"
+      device_class: humidity
+      state_class: measurement
+      state: >
+        {% set v = states('sensor.meter_pro_89_humidity') | float(default=none) %}
+        {% if v is not none %}
+          {{ v }}
+        {% else %}
+          {{ this.state }}
+        {% endif %}
+      availability: >
+        {% set v = states('sensor.meter_pro_89_humidity') | float(default=none) %}
+        {{ (v is not none) or (this.state not in ['unknown','none','']) }}
+
+    - name: "Master BR Temperature (Stable)"
+      unique_id: master_br_temperature_stable
+      unit_of_measurement: "°F"
+      device_class: temperature
+      state_class: measurement
+      state: >
+        {% set v = states('sensor.meter_pro_89_temperature') | float(default=none) %}
+        {% if v is not none %}
+          {{ v }}
+        {% else %}
+          {{ this.state }}
+        {% endif %}
+      availability: >
+        {% set v = states('sensor.meter_pro_89_temperature') | float(default=none) %}
+        {{ (v is not none) or (this.state not in ['unknown','none','']) }}
+
+# =========================
+# Garage (Outdoor) - Stable Sensors
+# =========================
+- trigger:
+    - platform: state
+      entity_id:
+        - sensor.outdoor_meter_1c_humidity
+        - sensor.outdoor_meter_1c_temperature
+  sensor:
+    - name: "Garage Humidity (Stable)"
+      unique_id: garage_humidity_stable
+      unit_of_measurement: "%"
+      device_class: humidity
+      state_class: measurement
+      state: >
+        {% set v = states('sensor.outdoor_meter_1c_humidity') | float(default=none) %}
+        {% if v is not none %}
+          {{ v }}
+        {% else %}
+          {{ this.state }}
+        {% endif %}
+      availability: >
+        {% set v = states('sensor.outdoor_meter_1c_humidity') | float(default=none) %}
+        {{ (v is not none) or (this.state not in ['unknown','none','']) }}
+
+    - name: "Garage Temperature (Stable)"
+      unique_id: garage_temperature_stable
+      unit_of_measurement: "°F"
+      device_class: temperature
+      state_class: measurement
+      state: >
+        {% set v = states('sensor.outdoor_meter_1c_temperature') | float(default=none) %}
+        {% if v is not none %}
+          {{ v }}
+        {% else %}
+          {{ this.state }}
+        {% endif %}
+      availability: >
+        {% set v = states('sensor.outdoor_meter_1c_temperature') | float(default=none) %}
+        {{ (v is not none) or (this.state not in ['unknown','none','']) }}
+
+# =========================
+# Master Bedroom Bed Presence - Stable Binary Sensors
+# =========================
+- binary_sensor:
+    - name: "Master Bed – Caleb In Bed"
+      unique_id: master_bed_caleb_in_bed
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_right', 'on') }}"
+      delay_on: "00:00:05"
+      delay_off: "00:01:00"
+
+    - name: "Master Bed – Tia In Bed"
+      unique_id: master_bed_tia_in_bed
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_left', 'on') }}"
+      delay_on: "00:00:05"
+      delay_off: "00:01:00"
+
+    - name: "Master Bed – Anyone In Bed"
+      unique_id: master_bed_anyone_in_bed
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_either', 'on') }}"
+      delay_on: "00:00:05"
+      delay_off: "00:01:30"
+
+    - name: "Master Bed – Both In Bed"
+      unique_id: master_bed_both_in_bed
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_both', 'on') }}"
+      delay_on: "00:00:10"
+      delay_off: "00:02:00"
+
+- sensor:
+    - name: Upstairs Average Temperature
+      unique_id: upstairs_average_temperature
+      unit_of_measurement: °F
+      device_class: temperature
+      state_class: measurement
+      state: |
+        {% set caleb = states("sensor.caleb_s_office_hygrometer_temperature") | float(0) %}
+        {% set tia = states("sensor.tias_office_hygrometer_temperature") | float(0) %}
+        {% set master = states("sensor.meter_pro_2689_temperature") | float(0) %}
+        {% if caleb > 0 and tia > 0 and master > 0 %}
+          {{ ((caleb + tia + master) / 3) | round(2) }}
+        {% else %}
+          unknown
+        {% endif %}
+      availability: |
+        {{ states("sensor.caleb_s_office_hygrometer_temperature") not in ["unavailable","unknown"]
+           and states("sensor.tias_office_hygrometer_temperature") not in ["unavailable","unknown"]
+           and states("sensor.meter_pro_2689_temperature") not in ["unavailable","unknown"] }}
+
+# =========================
+# Thermostat Fan State — text sensor for history graph
+# =========================
+- sensor:
+    - name: "Thermostat Fan State"
+      unique_id: thermostat_fan_state
+      icon: mdi:fan
+      state: >
+        {% set m = state_attr('climate.downstairs_thermostat', 'fan_mode') %}
+        {% if m == 'on' %}running{% elif m is not none %}auto{% else %}unknown{% endif %}
+      availability: >
+        {{ states('climate.downstairs_thermostat') not in ['unavailable','unknown'] }}
+
+# =========================
+# Gazebo Occupied — wind-gated presence
+# =========================
+- binary_sensor:
+    - name: "Gazebo Occupied"
+      unique_id: gazebo_occupied_wind_gated
+      device_class: occupancy
+      state: >-
+        {% set hw_presence = is_state('binary_sensor.gazebo_presence_sensor_presence', 'on') %}
+        {% set still_energy = states('sensor.gazebo_presence_sensor_still_energy') | float(0) %}
+        {% set energy_presence = still_energy > 7 %}
+        {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
+                             and is_state('sun.sun', 'below_horizon') %}
+        {{ (hw_presence or energy_presence) and not windy_night }}

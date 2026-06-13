@@ -274,11 +274,48 @@ def zone_card(zone: dict) -> dict:
 
     for fan in attrs.get("fans", []):
         entities.append({"entity": fan, "name": "Fan"})
+        entities.append({
+            "type": "attribute",
+            "entity": fan,
+            "attribute": "percentage",
+            "name": "Speed %",
+            "icon": "mdi:speedometer",
+        })
 
     entities.append({"entity": resolve_switch(slug, "auto", all_ids), "name": "Auto"})
     entities.append({"entity": resolve_switch(slug, "fan_locked", all_ids), "name": "Fan Locked"})
 
     return {"type": "entities", "title": zone["title"], "entities": entities}
+
+
+def fan_status_card(zones: list[dict]) -> dict:
+    """One card showing every zone's fan state, speed, and lock switch."""
+    entities = []
+    for z in zones:
+        fans = z["attrs"].get("fans", [])
+        if not fans:
+            continue
+        slug = z["slug"]
+        all_ids = z["all_ids"]
+        entities.append({"type": "section", "label": z["title"]})
+        for fan in fans:
+            entities.append({"entity": fan, "name": "Fan"})
+            entities.append({
+                "type": "attribute",
+                "entity": fan,
+                "attribute": "percentage",
+                "name": "Speed %",
+                "icon": "mdi:speedometer",
+            })
+        entities.append({
+            "entity": resolve_switch(slug, "fan_locked", all_ids),
+            "name": "Locked (user override)",
+        })
+        entities.append({
+            "entity": f"sensor.{slug}_hvac_status",
+            "name": "Decision",
+        })
+    return {"type": "entities", "title": "Fan Status & Logic", "entities": entities}
 
 
 def zone_pairs(zone_cards: list[dict]) -> list[dict]:
@@ -303,17 +340,21 @@ def floor_temps_glance(zones: list[dict]) -> dict:
     return {"type": "glance", "title": "Zone Temperatures", "show_name": True, "entities": entities}
 
 
-def history_graph_card(thermostat: str) -> dict:
+def history_graph_card(thermostat: str, zones: list[dict]) -> dict:
+    entities = [
+        {"entity": thermostat, "name": "HVAC Mode"},
+        {"entity": "number.adaptive_hvac_ac_setpoint", "name": "AC Setpoint"},
+        {"entity": "sensor.thermostat_fan_state", "name": "Whole-House Fan"},
+        {"entity": "sensor.adaptive_hvac_mode", "name": "Integration Mode"},
+    ]
+    for z in zones:
+        for fan in z["attrs"].get("fans", []):
+            entities.append({"entity": fan, "name": f"{z['title']} Fan"})
     return {
         "type": "history-graph",
-        "title": "Thermostat History (6h)",
+        "title": "History (6h)",
         "hours_to_show": 6,
-        "entities": [
-            {"entity": thermostat, "name": "HVAC Mode"},
-            {"entity": "number.adaptive_hvac_ac_setpoint", "name": "AC Setpoint"},
-            {"entity": "sensor.thermostat_fan_state", "name": "Fan"},
-            {"entity": "sensor.adaptive_hvac_mode", "name": "Integration Mode"},
-        ],
+        "entities": entities,
     }
 
 
@@ -384,8 +425,9 @@ def build_dashboard(zones: list[dict], sys_cfg: dict) -> dict:
         markdown_card(zones),
         system_glance_card(sys_cfg),
         *zone_pairs(z_cards),
+        fan_status_card(zones),
         floor_temps_glance(zones),
-        history_graph_card(thermostat),
+        history_graph_card(thermostat, zones),
         controls_card(),
         setpoints_card(),
         logbook_card(thermostat),
