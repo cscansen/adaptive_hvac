@@ -149,9 +149,8 @@
       unique_id: gazebo_occupied_wind_gated
       device_class: occupancy
       state: >-
-        {% set hw_presence = is_state('binary_sensor.gazebo_presence_sensor_presence', 'on') %}
         {% set still_energy = states('sensor.gazebo_presence_sensor_still_energy') | float(0) %}
-        {% set energy_presence = still_energy > 7 %}
+        {% set occupied = still_energy > 40 %}
         {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
                              and is_state('sun.sun', 'below_horizon') %}
-        {{ (hw_presence or energy_presence) and not windy_night }}
+        {{ occupied and not windy_night }}
