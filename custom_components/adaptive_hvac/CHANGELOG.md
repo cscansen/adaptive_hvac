@@ -4,6 +4,19 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.26] - 2026-06-13
+
+### Fixed
+- **Fans no longer lock on HA reboot** — `_handle_fan_change` now skips state transitions where
+  the previous state was `unavailable` or `unknown` (or absent). These transitions occur on every
+  HA startup when entity states are restored from the recorder; they are not user actions and
+  should not trigger the fan lock.
+- **Locked fans turn off when zone is unoccupied** — previously a locked fan was completely
+  hands-off: the integration would neither turn it on nor turn it off. Now the lock only
+  suppresses *turn-on* commands. If a zone is unoccupied, the fan is turned off regardless of
+  lock state. This prevents fans from running indefinitely in empty rooms after a manual
+  adjustment or reboot.
+
 ## [0.3.25] - 2026-06-08
 
 ### Added

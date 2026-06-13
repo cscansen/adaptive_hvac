@@ -158,7 +158,13 @@ class ZoneCoordinator(DataUpdateCoordinator):
     def _handle_fan_change(self, event) -> None:
         """Lock fan when user manually changes a fan in this zone."""
         new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
         if new_state is None:
+            return
+        # Skip availability transitions — these are HA startup restores, not user actions.
+        if old_state is None or old_state.state in ("unavailable", "unknown"):
+            return
+        if new_state.state in ("unavailable", "unknown"):
             return
         # Skip our own dispatches: integration service calls have parent_id but no user_id.
         # Physical switch presses and HA UI/app changes should trigger the lock.
@@ -191,13 +197,13 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
     def _map_fan_commands(self, fan_commands: dict[str, int | None]) -> dict[str, int | None]:
         """Map zone_name-keyed commands to actual fan entity IDs."""
-        if self._fan_locked:
-            return {}
         fans = self.zone_config.get("fans", [])
         if not fans or self.zone_name not in fan_commands:
             return {}
         speed = fan_commands[self.zone_name]
         if speed is None:
+            return {}
+        if self._fan_locked and speed > 0:
             return {}
         return {fan_entity: speed for fan_entity in fans}
 

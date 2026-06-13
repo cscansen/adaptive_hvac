@@ -160,14 +160,17 @@ def decide_zone(
     # Above zone target: fan on; thermal request only if zone affects thermostat
     if zone.temp > cfg.zone_target_temp:
         reasoning.append(f"Temp {zone.temp:.1f}°F > target {cfg.zone_target_temp:.1f}°F")
-        if zone.fan_locked:
+        if zone.fan_locked and zone.zone_occupied:
             fan_cmds = {}
             reasoning.append("Fan locked by user — not touching")
         elif zone.zone_occupied:
             fan_cmds = {zone.zone_name: cfg.fan_speed}
         else:
             fan_cmds = {zone.zone_name: 0}
-            reasoning.append("Zone unoccupied — fan off (thermostat request still active)")
+            msg = "Zone unoccupied — fan off (thermostat request still active)"
+            if zone.fan_locked:
+                msg += " [lock overridden: unoccupied]"
+            reasoning.append(msg)
         thermal = "cool" if zone.affects_thermostat else None
         if not zone.affects_thermostat:
             reasoning.append("Zone does not affect thermostat — fans only")
@@ -199,7 +202,7 @@ def decide_zone(
 
     # Comfortable: fan off
     reasoning.append(f"Comfortable: temp {zone.temp:.1f}°F ≤ target {cfg.zone_target_temp:.1f}°F")
-    fan_cmds = {} if zone.fan_locked else {zone.zone_name: 0}
+    fan_cmds = {} if (zone.fan_locked and zone.zone_occupied) else {zone.zone_name: 0}
     return ZoneDecision(
         mode="idle",
         zone_name=zone.zone_name,
