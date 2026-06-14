@@ -142,6 +142,33 @@
         {{ states('climate.downstairs_thermostat') not in ['unavailable','unknown'] }}
 
 # =========================
+# Front Porch — wind-gated presence zones
+# Calibrated 2026-06-14: 0.75m resolution, G2=5ft (swings), G7=17ft (stoop)
+# Empty baseline: G2=44, G7=43 | Swings occupied: G2=100, G7≤56 | Stoop occupied: G7=100
+# =========================
+- binary_sensor:
+    - name: "Front Porch Swings Occupied"
+      unique_id: front_porch_swings_occupied
+      device_class: occupancy
+      state: >-
+        {% set g2 = states('sensor.front_porch_front_porch_presence_g2_still_energy') | float(0) %}
+        {% set g7 = states('sensor.front_porch_front_porch_presence_g7_still_energy') | float(0) %}
+        {% set occupied = g2 > 75 and g7 < 75 %}
+        {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
+                             and is_state('sun.sun', 'below_horizon') %}
+        {{ occupied and not windy_night }}
+
+    - name: "Front Porch Stoop Occupied"
+      unique_id: front_porch_stoop_occupied
+      device_class: occupancy
+      state: >-
+        {% set g7 = states('sensor.front_porch_front_porch_presence_g7_still_energy') | float(0) %}
+        {% set occupied = g7 > 75 %}
+        {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
+                             and is_state('sun.sun', 'below_horizon') %}
+        {{ occupied and not windy_night }}
+
+# =========================
 # Gazebo Occupied — wind-gated presence
 # =========================
 - binary_sensor:
