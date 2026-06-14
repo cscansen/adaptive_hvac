@@ -4,6 +4,15 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.27] - 2026-06-14
+
+### Fixed
+- **Emergency heat no longer fires in summer at normal indoor temps** — zone coordinators were
+  evaluating the emergency heat threshold against a hardcoded default of 55°F instead of the
+  user-configured value. At a room temperature of 55°F this falsely triggered emergency heat mode
+  all summer. The check is now performed in `decide_system()` where the real configured threshold
+  is available, so the zone-level evaluation never emits an emergency heat request.
+
 ## [0.3.26] - 2026-06-13
 
 ### Fixed
