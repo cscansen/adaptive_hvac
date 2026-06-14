@@ -1,0 +1,38 @@
+{
+    "id": "1750000000001",
+    "alias": "Media - Pause All When Nobody Home",
+    "description": "Pause all playing media when both Caleb and Tia leave home.",
+    "triggers": [
+        {
+            "trigger": "state",
+            "entity_id": "person.caleb_m_scansen",
+            "to": "not_home"
+        },
+        {
+            "trigger": "state",
+            "entity_id": "person.tia_scansen",
+            "to": "not_home"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "state",
+            "entity_id": "person.caleb_m_scansen",
+            "state": "not_home"
+        },
+        {
+            "condition": "state",
+            "entity_id": "person.tia_scansen",
+            "state": "not_home"
+        }
+    ],
+    "actions": [
+        {
+            "action": "media_player.media_pause",
+            "target": {
+                "entity_id": "all"
+            }
+        }
+    ],
+    "mode": "single"
+}
