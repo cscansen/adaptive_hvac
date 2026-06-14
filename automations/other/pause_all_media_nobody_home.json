@@ -1,44 +1,80 @@
 {
     "id": "1750000000001",
-    "alias": "Media - Pause All When Nobody Home",
-    "description": "Pause all playing media when both Caleb and Tia leave home.",
+    "alias": "Media - Stop All When Nobody Home / Rearm On Arrival",
+    "description": "Stop all media and disable dynamic audio when both leave. Re-enable dynamic audio when either returns.",
     "triggers": [
         {
+            "id": "caleb_left",
             "trigger": "state",
             "entity_id": "person.caleb_m_scansen",
             "to": "not_home"
         },
         {
+            "id": "tia_left",
             "trigger": "state",
             "entity_id": "person.tia_scansen",
             "to": "not_home"
-        }
-    ],
-    "conditions": [
-        {
-            "condition": "state",
-            "entity_id": "person.caleb_m_scansen",
-            "state": "not_home"
         },
         {
-            "condition": "state",
-            "entity_id": "person.tia_scansen",
-            "state": "not_home"
+            "id": "someone_home",
+            "trigger": "state",
+            "entity_id": [
+                "person.caleb_m_scansen",
+                "person.tia_scansen"
+            ],
+            "to": "home"
         }
     ],
     "actions": [
         {
-            "action": "media_player.media_stop",
-            "target": {
-                "entity_id": "all"
-            }
-        },
-        {
-            "action": "switch.turn_off",
-            "target": {
-                "entity_id": "switch.dynamic_central_audio_central_audio_active"
-            }
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "someone_home"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "switch.turn_on",
+                            "target": {
+                                "entity_id": "switch.dynamic_central_audio_central_audio_active"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "person.caleb_m_scansen",
+                            "state": "not_home"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "person.tia_scansen",
+                            "state": "not_home"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "media_player.media_stop",
+                            "target": {
+                                "entity_id": "all"
+                            }
+                        },
+                        {
+                            "action": "switch.turn_off",
+                            "target": {
+                                "entity_id": "switch.dynamic_central_audio_central_audio_active"
+                            }
+                        }
+                    ]
+                }
+            ]
         }
     ],
-    "mode": "single"
+    "mode": "queued",
+    "max": 2
 }
