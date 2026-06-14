@@ -96,7 +96,7 @@ def decide_zone(
     - Manual override / system inactive → no action
     - Sensor failsafe → no action
     - Emergency cool (≥ cfg.emergency_cool_threshold) → fan 100%, request cool
-    - Emergency heat (≤ sys_cfg.emergency_heat_threshold) → request heat, no fan
+    - Emergency heat: evaluated in decide_system() using real configured threshold
     - Temp > zone_target → fan on at cfg.fan_speed, request cool (summer) or none (winter)
     - Temp ≤ zone_target AND winter below heat_threshold → request heat, no fan
     - Otherwise → fan off, no thermal request
@@ -143,19 +143,6 @@ def decide_zone(
             reasoning=reasoning,
         )
 
-    # Emergency heating — thermostat call only if zone affects thermostat
-    if zone.temp <= sys_cfg.emergency_heat_threshold:
-        reasoning.append(f"Temp {zone.temp:.1f}°F ≤ emergency heat {sys_cfg.emergency_heat_threshold:.1f}°F")
-        if not zone.affects_thermostat:
-            reasoning.append("Zone does not affect thermostat — no heat call")
-        return ZoneDecision(
-            mode="emergency_heating",
-            zone_name=zone.zone_name,
-            thermal_request="heat" if zone.affects_thermostat else None,
-            urgency=5,
-            status=f"{zone.zone_name}: EMERGENCY HEATING {zone.temp:.1f}°F",
-            reasoning=reasoning,
-        )
 
     # Above zone target: fan on; thermal request only if zone affects thermostat
     if zone.temp > cfg.zone_target_temp:
@@ -254,7 +241,12 @@ def decide_system(
 
     # Emergency requests bypass gating (fan stays auto — HVAC fan already runs with compressor/furnace)
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
-    emergency_heat = any(d.mode == "emergency_heating" for d in zone_decisions)
+    # Emergency heat is evaluated here (not in decide_zone) so the real configured threshold is used
+    emergency_heat_zones = [
+        z for z in sys_state.zone_states
+        if z.temp <= cfg.emergency_heat_threshold and z.affects_thermostat
+    ]
+    emergency_heat = bool(emergency_heat_zones)
 
     if emergency_cool:
         reasoning.append("Emergency cooling active — bypass gating")
@@ -267,7 +259,8 @@ def decide_system(
         )
 
     if emergency_heat:
-        reasoning.append("Emergency heating active — bypass gating")
+        trigger = ", ".join(f"{z.zone_name} {z.temp:.1f}°F" for z in emergency_heat_zones)
+        reasoning.append(f"Emergency heating active ({trigger}) — bypass gating")
         return SystemDecision(
             thermostat_hvac_mode="heat",
             thermostat_setpoint=cfg.heat_setpoint,
