@@ -162,7 +162,7 @@
       unique_id: front_porch_stoop_occupied
       device_class: occupancy
       delay_on: "00:00:45"
-      delay_off: "00:15:00"
+      delay_off: "00:05:00"
       state: >-
         {% set windy = state_attr('weather.home', 'wind_speed') | float(0) >= 12 %}
         {{ is_state('binary_sensor.front_door_motion_2', 'on') and not windy }}
