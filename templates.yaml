@@ -154,9 +154,8 @@
         {% set g2 = states('sensor.front_porch_front_porch_presence_g2_still_energy') | float(0) %}
         {% set g7 = states('sensor.front_porch_front_porch_presence_g7_still_energy') | float(0) %}
         {% set occupied = g2 > 75 and g7 < 75 %}
-        {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
-                             and is_state('sun.sun', 'below_horizon') %}
-        {{ occupied and not windy_night }}
+        {% set windy = state_attr('weather.home', 'wind_speed') | float(0) >= 12 %}
+        {{ occupied and not windy }}
 
     - name: "Front Porch Stoop Occupied"
       unique_id: front_porch_stoop_occupied
@@ -164,9 +163,8 @@
       state: >-
         {% set g7 = states('sensor.front_porch_front_porch_presence_g7_still_energy') | float(0) %}
         {% set occupied = g7 > 75 %}
-        {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
-                             and is_state('sun.sun', 'below_horizon') %}
-        {{ occupied and not windy_night }}
+        {% set windy = state_attr('weather.home', 'wind_speed') | float(0) >= 12 %}
+        {{ occupied and not windy }}
 
 # =========================
 # Gazebo Occupied — wind-gated presence
