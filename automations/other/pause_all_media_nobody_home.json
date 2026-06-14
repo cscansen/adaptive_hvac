@@ -28,9 +28,15 @@
     ],
     "actions": [
         {
-            "action": "media_player.media_pause",
+            "action": "media_player.media_stop",
             "target": {
                 "entity_id": "all"
+            }
+        },
+        {
+            "action": "switch.turn_off",
+            "target": {
+                "entity_id": "switch.dynamic_central_audio_central_audio_active"
             }
         }
     ],
