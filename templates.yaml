@@ -154,9 +154,9 @@
       device_class: occupancy
       state: >-
         {% set g2 = states('sensor.front_porch_front_porch_presence_g2_still_energy') | float(0) %}
-        {% set camera_motion = is_state('binary_sensor.front_door_motion_2', 'on') %}
+        {% set stoop_occupied = is_state('binary_sensor.front_porch_stoop_occupied', 'on') %}
         {% set windy = state_attr('weather.home', 'wind_speed') | float(0) >= 12 %}
-        {{ g2 > 75 and not camera_motion and not windy }}
+        {{ g2 > 75 and not stoop_occupied and not windy }}
 
     - name: "Front Porch Stoop Occupied"
       unique_id: front_porch_stoop_occupied
