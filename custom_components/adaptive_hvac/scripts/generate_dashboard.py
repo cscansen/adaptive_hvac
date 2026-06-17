@@ -272,6 +272,8 @@ def zone_card(zone: dict) -> dict:
     for sensor in attrs.get("temp_sensors", [])[:1]:
         entities.append({"entity": sensor, "name": "Temp"})
 
+    entities.append({"entity": f"number.{slug}_target_temp", "name": "Target Temp"})
+
     for fan in attrs.get("fans", []):
         entities.append({"entity": fan, "name": "Fan"})
         entities.append({

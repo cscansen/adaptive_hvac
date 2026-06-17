@@ -28,6 +28,7 @@ class SystemState:
     season: str = "summer"               # "summer" or "winter" (calendar-based)
     sleep_posture: bool = False          # kept for future use, not used for control
     house_occupied: bool = True
+    windows_openable: bool = True        # False when rain or high wind makes opening impractical
     manual_override: bool = False
     system_active: bool = True
 
@@ -97,8 +98,8 @@ def decide_zone(
     - Sensor failsafe → no action
     - Emergency cool (≥ cfg.emergency_cool_threshold) → fan 100%, request cool
     - Emergency heat: evaluated in decide_system() using real configured threshold
-    - Temp > zone_target → fan on at cfg.fan_speed, request cool (summer) or none (winter)
-    - Temp ≤ zone_target AND winter below heat_threshold → request heat, no fan
+    - Temp >= zone_target → fan on if occupied (not locked); fan off if unoccupied; thermostat request if affects_thermostat
+    - Temp < zone_target AND winter below heat_threshold → request heat, no fan
     - Otherwise → fan off, no thermal request
     """
     reasoning: list[str] = []
@@ -144,20 +145,17 @@ def decide_zone(
         )
 
 
-    # Above zone target: fan on; thermal request only if zone affects thermostat
-    if zone.temp > cfg.zone_target_temp:
-        reasoning.append(f"Temp {zone.temp:.1f}°F > target {cfg.zone_target_temp:.1f}°F")
-        if zone.fan_locked and zone.zone_occupied:
+    # At or above zone target: fan on if occupied; thermostat request if affects_thermostat
+    if zone.temp >= cfg.zone_target_temp:
+        reasoning.append(f"Temp {zone.temp:.1f}°F ≥ target {cfg.zone_target_temp:.1f}°F")
+        if zone.fan_locked:
             fan_cmds = {}
             reasoning.append("Fan locked by user — not touching")
         elif zone.zone_occupied:
             fan_cmds = {zone.zone_name: cfg.fan_speed}
         else:
             fan_cmds = {zone.zone_name: 0}
-            msg = "Zone unoccupied — fan off (thermostat request still active)"
-            if zone.fan_locked:
-                msg += " [lock overridden: unoccupied]"
-            reasoning.append(msg)
+            reasoning.append("Zone unoccupied — fan off (thermostat request still active)")
         thermal = "cool" if zone.affects_thermostat else None
         if not zone.affects_thermostat:
             reasoning.append("Zone does not affect thermostat — fans only")
@@ -188,7 +186,7 @@ def decide_zone(
         )
 
     # Comfortable: fan off
-    reasoning.append(f"Comfortable: temp {zone.temp:.1f}°F ≤ target {cfg.zone_target_temp:.1f}°F")
+    reasoning.append(f"Comfortable: temp {zone.temp:.1f}°F < target {cfg.zone_target_temp:.1f}°F")
     fan_cmds = {} if (zone.fan_locked and zone.zone_occupied) else {zone.zone_name: 0}
     return ZoneDecision(
         mode="idle",
@@ -236,8 +234,15 @@ def decide_system(
             reasoning=["System paused via switch"],
         )
 
-    # Floor circulation fan mode — computed before gating so it applies on all off paths
+    # Floor circulation fan mode — computed before gating so it applies on all off paths.
+    # In summer, suppressed when AC is off (circulating warm air without cold supply has no benefit).
     fan_mode, fan_reasoning = _floor_fan_mode(sys_state.zone_states, cfg, sys_state.sleep_posture)
+
+    def _summer_off_fan_mode() -> tuple[str, list[str]]:
+        """Return fan_mode/reasoning for a summer system-off decision."""
+        if season == "summer" and fan_mode == "on":
+            return "auto", fan_reasoning + ["AC not active — floor circulation suppressed (no cold air to distribute)"]
+        return fan_mode, fan_reasoning
 
     # Emergency requests bypass gating (fan stays auto — HVAC fan already runs with compressor/furnace)
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
@@ -275,12 +280,13 @@ def decide_system(
         if open_zones:
             zone_list = ", ".join(open_zones)
             reasoning.append(f"AC BLOCKED: window open in {zone_list}")
+            off_fan_mode, off_fan_reasoning = _summer_off_fan_mode()
             return SystemDecision(
                 thermostat_hvac_mode="off",
-                whole_house_fan_mode=fan_mode,
+                whole_house_fan_mode=off_fan_mode,
                 season=season,
                 status=f"SYSTEM: OFF (window open — {zone_list})",
-                reasoning=reasoning + fan_reasoning,
+                reasoning=reasoning + off_fan_reasoning,
             )
 
     # Collect zone requests
@@ -315,19 +321,25 @@ def decide_system(
                         f"and no zone exceeds interior override delta"
                     )
 
-            # Relative gate: if outdoor is cooler than the requesting zones' targets,
-            # opening windows would achieve comfort — don't run the compressor.
+            # Relative gate: if outdoor is cooler than the requesting zones' targets AND
+            # windows can be opened, natural ventilation is the better tool.
             if allow_cool:
                 cooling_zone_names = {d.zone_name for d in cooling_zones}
                 requesting_states = [z for z in sys_state.zone_states if z.zone_name in cooling_zone_names]
                 if requesting_states:
                     min_target = min(z.zone_target_temp for z in requesting_states)
                     if outdoor < min_target:
-                        allow_cool = False
-                        reasoning.append(
-                            f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
-                            f"— cooler outside, open windows"
-                        )
+                        if sys_state.windows_openable:
+                            allow_cool = False
+                            reasoning.append(
+                                f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
+                                f"— cooler outside, open windows"
+                            )
+                        else:
+                            reasoning.append(
+                                f"Outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
+                                f"but conditions poor (rain/wind) — AC allowed"
+                            )
 
             if allow_cool:
                 boost = cfg.upstairs_demand_boost if cooling_zones else 0.0
@@ -347,12 +359,13 @@ def decide_system(
                 )
 
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
+        off_fan_mode, off_fan_reasoning = _summer_off_fan_mode()
         return SystemDecision(
             thermostat_hvac_mode="off",
-            whole_house_fan_mode=fan_mode,
+            whole_house_fan_mode=off_fan_mode,
             season=season,
             status=f"SYSTEM: OFF (summer, no cooling) | {zone_statuses}",
-            reasoning=reasoning + fan_reasoning,
+            reasoning=reasoning + off_fan_reasoning,
         )
 
     elif season == "winter":
@@ -407,12 +420,8 @@ def _floor_fan_mode(
 
     Groups zones by their floor ID (zones with no floor are excluded).
     If any two floors differ by >= cfg.fan_circulation_delta, returns "on".
-    Suppressed when sleep_posture is active.
-    Otherwise returns "auto".
+    Otherwise returns "auto". Suppression when AC is off is handled in decide_system().
     """
-    if sleep_posture:
-        return "auto", ["Floor circulation suppressed — sleep posture active"]
-
     floors: dict[str, list[float]] = {}
     for z in zone_states:
         if z.floor and z.temp > 0:

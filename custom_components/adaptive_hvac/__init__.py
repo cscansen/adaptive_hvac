@@ -61,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             # Platform setup first — FanLockedSwitch.async_added_to_hass restores
             # _fan_locked from persisted state before the first coordinator evaluation runs
-            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch"])
+            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "number"])
             await coordinator.async_config_entry_first_refresh()
 
         if entry_type == ENTRY_TYPE_SYSTEM:

@@ -4,6 +4,39 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.29] - 2026-06-17
+
+### Added
+- **Zone target temp exposed as a dashboard entity** — each zone now creates
+  `number.adaptive_hvac_{zone}_target_temp`, adjustable directly from the HA dashboard or Lovelace.
+  Value persists across restarts via HA `RestoreEntity`. Previously this required going into
+  Settings → Integrations → Configure.
+
+### Fixed
+- **Reverted 0.3.28 fan occupancy change** — fans correctly run only in occupied rooms. The previous
+  release removed the occupancy gate; it is restored. Fan lock behavior is kept: a user-locked fan
+  is not commanded regardless of occupancy.
+- **Fan trigger is now `>=` zone target (was `>`)** — at exactly the zone target temperature the
+  fan was off. Changed to `>=` so the fan turns on at the target, not only above it.
+- **Central air handler fan suppressed when AC is off in summer** — floor circulation now only runs
+  when the AC is actively cooling (cold supply air to distribute). Previously suppressed by
+  `sleep_posture` flag regardless of whether AC was actually running, causing it to run all night
+  when windows were open and AC was blocked.
+- **"Open windows" gate respects weather conditions** — the relative gate that blocks AC when outdoor
+  temp is below zone target now checks `weather.home` for rain and wind ≥ 20 mph. On bad-weather
+  nights, AC is allowed even when outdoor air is cooler.
+
+## [0.3.28] - 2026-06-17
+
+### Fixed
+- **Ceiling fans now run on temperature, not occupancy** — warm unoccupied zones were previously
+  sending a fan-off command (`speed = 0`) via dispatch, which actively turned off ceiling fans even
+  when the room was above the zone target. Fans now run whenever `temp > zone_target` regardless of
+  occupancy; occupancy only gates the thermostat call (AC/heat request). This also means the window
+  gate correctly blocks AC without also blocking ceiling fans in occupied warm rooms.
+- **Fan lock now consistent regardless of occupancy** — previously fan_locked + unoccupied sent a
+  fan-off command, bypassing the lock. Fan lock now means "don't touch" in all cases.
+
 ## [0.3.27] - 2026-06-14
 
 ### Fixed

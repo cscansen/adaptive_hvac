@@ -1,6 +1,6 @@
 """Number entities for Adaptive HVAC live-adjustable thresholds."""
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     DOMAIN,
     ENTRY_TYPE_SYSTEM,
+    ENTRY_TYPE_ZONE,
     DEFAULT_AC_SETPOINT,
     DEFAULT_HEAT_SETPOINT,
     DEFAULT_HEAT_THRESHOLD,
@@ -18,8 +19,9 @@ from .const import (
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
+    DEFAULT_ZONE_TARGET_TEMP,
 )
-from .coordinator import SystemCoordinator
+from .coordinator import SystemCoordinator, ZoneCoordinator
 
 
 async def async_setup_entry(
@@ -27,8 +29,15 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up number entities for the system entry only."""
-    if entry.data.get("entry_type") != ENTRY_TYPE_SYSTEM:
+    """Set up number entities for system and zone entries."""
+    entry_type = entry.data.get("entry_type")
+
+    if entry_type == ENTRY_TYPE_ZONE:
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        async_add_entities([ZoneTargetTempNumber(coordinator)], update_before_add=True)
+        return
+
+    if entry_type != ENTRY_TYPE_SYSTEM:
         return
 
     coordinator = hass.data[DOMAIN][entry.entry_id]
@@ -193,3 +202,37 @@ class FanCirculationDeltaNumber(_BaseSystemNumber):
         self._attr_native_min_value = 0.5
         self._attr_native_max_value = 5.0
         self._attr_native_step = 0.5
+
+
+class ZoneTargetTempNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
+    """Per-zone target temperature — dashboard-adjustable at runtime."""
+
+    def __init__(self, coordinator: ZoneCoordinator) -> None:
+        super().__init__(coordinator)
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_{coordinator.zone_slug}_target_temp"
+        self._attr_name = f"{coordinator.zone_name} Target Temp"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 60.0
+        self._attr_native_max_value = 85.0
+        self._attr_native_step = 0.5
+        self._attr_mode = NumberMode.BOX
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Restore persisted value across restarts
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in ("unknown", "unavailable", None):
+            try:
+                self._coordinator.runtime_target_temp = float(last_state.state)
+            except (ValueError, TypeError):
+                pass
+
+    @property
+    def native_value(self) -> float:
+        return self._coordinator.runtime_target_temp
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._coordinator.runtime_target_temp = value
+        self.async_write_ha_state()
+        await self._coordinator.async_request_refresh()
