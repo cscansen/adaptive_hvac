@@ -54,6 +54,8 @@ class SystemDecision:
     season: str = "summer"
     status: str = ""
     reasoning: list[str] = field(default_factory=list)
+    # True when zones demand cooling but all gating paths block it
+    cooling_blocked: bool = False
 
 
 @dataclass
@@ -287,6 +289,7 @@ def decide_system(
                 season=season,
                 status=f"SYSTEM: OFF (window open — {zone_list})",
                 reasoning=reasoning + off_fan_reasoning,
+                cooling_blocked=True,
             )
 
     # Collect zone requests
@@ -366,6 +369,8 @@ def decide_system(
             season=season,
             status=f"SYSTEM: OFF (summer, no cooling) | {zone_statuses}",
             reasoning=reasoning + off_fan_reasoning,
+            # cooling_blocked when zones were requesting cool but gates prevented it
+            cooling_blocked=bool(cooling_zones) and any("AC BLOCKED" in r for r in reasoning),
         )
 
     elif season == "winter":

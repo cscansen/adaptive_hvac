@@ -13,7 +13,7 @@ from .coordinator import ZoneCoordinator, SystemCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: Final[list[str]] = ["sensor", "switch", "number", "select"]
+PLATFORMS: Final[list[str]] = ["sensor", "switch", "number", "select", "binary_sensor"]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -40,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 entry.async_on_unload(unsub)
 
-            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "number", "select"])
+            await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "number", "select", "binary_sensor"])
             _register_services(hass, coordinator)
 
         elif entry_type == ENTRY_TYPE_ZONE:

@@ -4,6 +4,18 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.30] - 2026-06-17
+
+### Added
+- **`binary_sensor.adaptive_hvac_cooling_blocked`** — new entity that is `on` when zones are
+  requesting cooling but AC is gated off (open window, outdoor temp too low, or relative gate).
+  Includes `reason` and `status` attributes for automation message templates.
+- **Cooling-blocked push notification** — HA automation (`hvac_cooling_blocked_notify`) fires after
+  10 minutes of blocked cooling while someone is home, sending a time-sensitive alert to
+  `notify.all_phones` (Caleb's iPhone + Tia's iPhone).
+- **`notify.all_phones` group** — added to `notify.yaml`; targets only active iPhones (excludes
+  iPads and deprecated devices).
+
 ## [0.3.29] - 2026-06-17
 
 ### Added
