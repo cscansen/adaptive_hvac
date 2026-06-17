@@ -3,7 +3,7 @@ Unit tests for adaptive_hvac logic.py — pure decision engine, no HA required.
 
 Coverage priorities:
   - Emergency heat uses REAL configured threshold (not SystemConfig() default)
-  - Fan lock only blocks turn-ON; unoccupied zone fan still turns off
+  - Fan lock blocks all commands; fans track temperature not occupancy
   - Sensor failsafe on temp = 0 or >= 200
   - Emergency cool still evaluated at zone level
   - Summer/winter gating, exterior threshold, window gate
@@ -57,13 +57,14 @@ def zone(
     )
 
 
-def sys_state(zones, outdoor=75.0, season="summer", sleep=False, occupied=True):
+def sys_state(zones, outdoor=75.0, season="summer", sleep=False, occupied=True, windows_openable=True):
     return SystemState(
         zone_states=zones,
         outdoor_temp=outdoor,
         season=season,
         sleep_posture=sleep,
         house_occupied=occupied,
+        windows_openable=windows_openable,
     )
 
 
@@ -155,26 +156,26 @@ class TestEmergencyHeatThreshold:
 
 
 # ---------------------------------------------------------------------------
-# THE OTHER BUG: fan lock blocked turn-off; unoccupied zone should turn fan off
+# Fan behavior: fans track temperature, occupancy only gates the thermostat call
 # ---------------------------------------------------------------------------
 
 class TestFanLock:
 
-    def test_locked_fan_blocks_turn_on_when_occupied(self):
-        """Fan locked + zone occupied → cooling mode but no fan command."""
+    def test_locked_fan_blocks_command_when_occupied(self):
+        """Fan locked + zone occupied → no fan command (don't disturb user lock)."""
         z = zone(temp=78.0, fan_locked=True, occupied=True)
         ss = sys_state([z])
         d = decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())
         assert d.mode == "cooling"
         assert d.fan_commands == {}
 
-    def test_locked_fan_allows_turn_off_when_unoccupied(self):
-        """Fan locked + zone unoccupied → fan should turn off (lock only blocks turn-on)."""
+    def test_locked_fan_blocks_command_when_unoccupied(self):
+        """Fan locked + zone unoccupied → still no fan command (lock respected regardless)."""
         z = zone(temp=78.0, fan_locked=True, occupied=False)
         ss = sys_state([z])
         d = decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())
         assert d.mode == "cooling"
-        assert d.fan_commands.get("Office") == 0
+        assert d.fan_commands == {}
 
     def test_locked_fan_idle_occupied_no_fan_command(self):
         """Locked fan + idle + occupied → no fan command (don't disturb)."""
@@ -185,20 +186,55 @@ class TestFanLock:
         assert d.fan_commands == {}
 
     def test_locked_fan_idle_unoccupied_turns_off(self):
-        """Locked fan + idle + unoccupied → turn off (was running before)."""
+        """Locked fan + idle + unoccupied → turn off."""
         z = zone(temp=70.0, fan_locked=True, occupied=False)
         ss = sys_state([z])
         d = decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())
         assert d.mode == "idle"
         assert d.fan_commands.get("Office") == 0
 
-    def test_unlocked_fan_turns_on_when_cooling_occupied(self):
-        """Normal fan, cooling, occupied → fan runs at configured speed."""
+    def test_unlocked_fan_runs_when_warm_and_occupied(self):
+        """Unlocked fan, warm, occupied → fan runs at configured speed, thermostat called."""
         z = zone(temp=78.0, fan_locked=False, occupied=True)
         ss = sys_state([z])
         d = decide_zone(z, ss, zone_cfg(target=72.0, fan_speed=60), sys_cfg())
         assert d.mode == "cooling"
         assert d.fan_commands.get("Office") == 60
+        assert d.thermal_request == "cool"
+
+    def test_unlocked_fan_off_when_warm_and_unoccupied(self):
+        """Unlocked fan, warm, unoccupied → fan off; thermostat request still active."""
+        z = zone(temp=78.0, fan_locked=False, occupied=False)
+        ss = sys_state([z])
+        d = decide_zone(z, ss, zone_cfg(target=72.0, fan_speed=50), sys_cfg())
+        assert d.mode == "cooling"
+        assert d.fan_commands.get("Office") == 0
+        assert d.thermal_request == "cool"
+
+    def test_fan_on_at_exactly_zone_target_occupied(self):
+        """At exactly zone_target temp + occupied → fan on (>= boundary)."""
+        z = zone(temp=72.0, fan_locked=False, occupied=True)
+        ss = sys_state([z])
+        d = decide_zone(z, ss, zone_cfg(target=72.0, fan_speed=50), sys_cfg())
+        assert d.mode == "cooling"
+        assert d.fan_commands.get("Office") == 50
+
+    def test_fan_off_just_below_zone_target(self):
+        """Just below zone_target → comfortable/idle, fan off."""
+        z = zone(temp=71.9, fan_locked=False, occupied=True)
+        ss = sys_state([z])
+        d = decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())
+        assert d.mode == "idle"
+        assert d.fan_commands.get("Office") == 0
+
+    def test_fan_runs_when_warm_windows_open_occupied(self):
+        """Window open blocks AC but ceiling fan should still run when warm and occupied."""
+        z = zone(temp=76.0, occupied=True, window_open=True)
+        ss = sys_state([z], outdoor=65.0)
+        zone_d = decide_zone(z, ss, zone_cfg(target=72.0, fan_speed=50), sys_cfg())
+        system_d = decide_system(ss, [zone_d], sys_cfg())
+        assert system_d.thermostat_hvac_mode != "cool"
+        assert zone_d.fan_commands.get("Office") == 50
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +354,24 @@ class TestSummerCooling:
         assert decision.thermostat_hvac_mode == "off"
         assert "window open" in decision.status
 
+    def test_relative_gate_blocks_ac_when_windows_openable(self):
+        """Outdoor cooler than zone target + windows can be opened → AC blocked."""
+        z = zone(temp=75.0, occupied=True)
+        ss = sys_state([z], outdoor=68.0, season="summer", windows_openable=True)
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())]
+        decision = decide_system(ss, zone_decisions, sys_cfg())
+        assert decision.thermostat_hvac_mode == "off"
+        assert any("open windows" in r for r in decision.reasoning)
+
+    def test_relative_gate_allows_ac_when_windows_not_openable(self):
+        """Outdoor cooler than zone target but rain/wind → AC allowed."""
+        z = zone(temp=75.0, occupied=True)
+        ss = sys_state([z], outdoor=68.0, season="summer", windows_openable=False)
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg())]
+        decision = decide_system(ss, zone_decisions, sys_cfg())
+        assert decision.thermostat_hvac_mode == "cool"
+        assert any("conditions poor" in r for r in decision.reasoning)
+
 
 # ---------------------------------------------------------------------------
 # Winter heating gating
@@ -402,14 +456,40 @@ class TestFloorCirculation:
         mode, _ = _floor_fan_mode(zones, sys_cfg(fan_circulation_delta=2.0), sleep_posture=False)
         assert mode == "auto"
 
-    def test_fan_suppressed_during_sleep_posture(self):
+    def test_sleep_posture_no_longer_suppresses_fan(self):
+        """sleep_posture no longer suppresses floor fan — AC-off does instead."""
         zones = [
             zone(name="A", temp=80.0, floor="upstairs"),
             zone(name="B", temp=65.0, floor="downstairs"),
         ]
-        mode, reasoning = _floor_fan_mode(zones, sys_cfg(fan_circulation_delta=2.0), sleep_posture=True)
-        assert mode == "auto"
-        assert any("sleep" in r for r in reasoning)
+        mode, _ = _floor_fan_mode(zones, sys_cfg(fan_circulation_delta=2.0), sleep_posture=True)
+        assert mode == "on"
+
+    def test_floor_fan_suppressed_when_ac_off_summer(self):
+        """Summer + AC blocked by exterior gate → floor fan suppressed even if floors differ."""
+        # outdoor=40°F < cool_exterior_threshold=60°F; zones only 1°F above target (< override delta)
+        zones = [
+            zone(name="A", temp=73.0, floor="upstairs"),
+            zone(name="B", temp=68.0, floor="downstairs"),
+        ]
+        ss = sys_state(zones, outdoor=40.0, season="summer")
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg()) for z in zones]
+        sys_dec = decide_system(ss, zone_decisions, sys_cfg(cool_exterior_threshold=60.0))
+        assert sys_dec.thermostat_hvac_mode == "off"
+        assert sys_dec.whole_house_fan_mode == "auto"
+        assert any("AC not active" in r for r in sys_dec.reasoning)
+
+    def test_floor_fan_active_when_ac_cooling(self):
+        """Summer + AC actively cooling → floor fan follows circulation delta."""
+        zones = [
+            zone(name="A", temp=80.0, floor="upstairs"),
+            zone(name="B", temp=70.0, floor="downstairs"),
+        ]
+        ss = sys_state(zones, outdoor=90.0, season="summer")
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), sys_cfg()) for z in zones]
+        sys_dec = decide_system(ss, zone_decisions, sys_cfg(fan_circulation_delta=2.0))
+        assert sys_dec.thermostat_hvac_mode == "cool"
+        assert sys_dec.whole_house_fan_mode == "on"
 
     def test_single_floor_returns_auto(self):
         zones = [zone(name="A", temp=75.0, floor="main"), zone(name="B", temp=70.0, floor="main")]

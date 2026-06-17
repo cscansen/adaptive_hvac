@@ -75,6 +75,12 @@ class ZoneCoordinator(DataUpdateCoordinator):
         self.last_decision: Optional[ZoneDecision] = None
         self._mode_entered_at: Optional[datetime] = None
         self._fan_locked: bool = False
+        self.runtime_target_temp: float = float(zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP))
+
+    @property
+    def zone_slug(self) -> str:
+        import re
+        return re.sub(r"[^a-z0-9_]", "", self.zone_name.lower().replace(" ", "_"))
 
     def _read_temp(self) -> float:
         """Read and average zone temperature sensors."""
@@ -187,9 +193,7 @@ class ZoneCoordinator(DataUpdateCoordinator):
 
     def _read_auto_control_enabled(self) -> bool:
         """Check if zone auto-control switch is on."""
-        import re
-        zone_slug = re.sub(r"[^a-z0-9_]", "", self.zone_name.lower().replace(" ", "_"))
-        auto_entity = f"switch.adaptive_hvac_{zone_slug}_auto"
+        auto_entity = f"switch.adaptive_hvac_{self.zone_slug}_auto"
         state = self.hass.states.get(auto_entity)
         if state:
             return state.state == "on"
@@ -242,11 +246,11 @@ class ZoneCoordinator(DataUpdateCoordinator):
             zone_occupied=self._read_occupancy(),
             affects_thermostat=bool(self.zone_config.get("affects_thermostat", DEFAULT_AFFECTS_THERMOSTAT)),
             current_mode=self.last_decision.mode if self.last_decision else "idle",
-            zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
+            zone_target_temp=self.runtime_target_temp,
         )
 
         cfg = ZoneConfig(
-            zone_target_temp=float(self.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
+            zone_target_temp=self.runtime_target_temp,
             fan_speed=int(self.zone_config.get("fan_speed", DEFAULT_FAN_SPEED)),
             emergency_cool_threshold=float(self.zone_config.get("emergency_cool_threshold", DEFAULT_EMERGENCY_COOL_THRESHOLD)),
         )
@@ -385,6 +389,22 @@ class SystemCoordinator(DataUpdateCoordinator):
             return float(state.attributes.get("temperature", 70.0))
         except (ValueError, TypeError):
             return 70.0
+
+    def _read_windows_openable(self) -> bool:
+        """Return False if rain or high wind makes opening windows impractical."""
+        weather_entity = self.system_config.get("weather_entity")
+        if not weather_entity:
+            return True
+        state = self.hass.states.get(weather_entity)
+        if not state:
+            return True
+        rainy_conditions = {"rainy", "pouring", "lightning-rainy", "hail", "snowy-rainy"}
+        rainy = state.state in rainy_conditions
+        try:
+            wind = float(state.attributes.get("wind_speed", 0) or 0)
+        except (ValueError, TypeError):
+            wind = 0.0
+        return not rainy and wind < 20
 
     def _read_sleep_posture(self) -> bool:
         """Read sleep posture flag (retained for diagnostics/future use)."""
@@ -536,6 +556,7 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         # Read system inputs
         outdoor_temp = self._read_outdoor_temp()
+        windows_openable = self._read_windows_openable()
         manual_override = self.system_config.get("manual_override", False)
         system_active = self.system_config.get("system_active", True)
 
@@ -551,7 +572,7 @@ class SystemCoordinator(DataUpdateCoordinator):
                 window_open=coord._read_window_open(),
                 zone_occupied=coord._read_occupancy(),
                 affects_thermostat=bool(coord.zone_config.get("affects_thermostat", DEFAULT_AFFECTS_THERMOSTAT)),
-                zone_target_temp=float(coord.zone_config.get("zone_target_temp", DEFAULT_ZONE_TARGET_TEMP)),
+                zone_target_temp=coord.runtime_target_temp,
             ))
 
         sys_state = SystemState(
@@ -562,6 +583,7 @@ class SystemCoordinator(DataUpdateCoordinator):
             house_occupied=self._read_house_occupancy(),
             manual_override=manual_override,
             system_active=system_active,
+            windows_openable=windows_openable,
         )
 
         cfg = SystemConfig(
