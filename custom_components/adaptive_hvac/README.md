@@ -114,6 +114,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 |--------|-------------|
 | `sensor.{zone}_hvac_status` | Zone mode and reasoning. Attributes include `temp_sensors`, `fans`, `floor`, `affects_thermostat`, `zone_target_temp`, `mode`, `thermal_request`, `urgency`, `reasoning`, `fan_commands` |
 | `sensor.{zone}_temp_trend` | Temperature trend in °F/hr (30-minute rolling window) |
+| `number.{zone}_target_temp` | Per-zone target temperature (60–85°F, 0.5°F step). Fan on at/above this, fan off below. Adjustable directly from the dashboard; persists across restarts. |
 | `switch.adaptive_hvac_{zone}_auto` | Auto-control toggle — OFF means the integration skips this zone entirely |
 | `switch.adaptive_hvac_{zone}_fan_locked` | Fan lock — ON means user has claimed the fan; integration hands off until midnight |
 

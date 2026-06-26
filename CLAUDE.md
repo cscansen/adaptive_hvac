@@ -30,7 +30,7 @@
 
 ## Audio Zone System
 
-**Dynamic Central Audio (DCA) v0.3.11** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
+**Dynamic Central Audio (DCA) v0.3.17** — custom HACS integration. Fully replaces the old automation-based zone follow, volume readback/authority, ATV exclusion, and HTD cover stack. Do not re-enable old automations.
 
 ### Zones
 | Zone | Status sensor | Follow-Me switch | Volume offset |
@@ -41,7 +41,6 @@
 | Gazebo & Yard | `sensor.dynamic_central_audio_gazebo_and_yard_status` | `switch.dynamic_central_audio_gazebo_and_yard_follow_me` | `number.dynamic_central_audio_gazebo_and_yard_volume_offset` |
 | Garage | `sensor.dynamic_central_audio_garage_status` | `switch.dynamic_central_audio_garage_follow_me` | `number.dynamic_central_audio_garage_volume_offset` |
 | Front Porch | `sensor.dynamic_central_audio_front_porch_status` | `switch.dynamic_central_audio_front_porch_follow_me` | `number.dynamic_central_audio_front_porch_volume_offset` |
-| Garage Gym | `sensor.dynamic_central_audio_garage_gym_zone_status` | `switch.dynamic_central_audio_garage_gym_zone_follow_me` | `number.dynamic_central_audio_garage_gym_zone_volume_offset` |
 
 ### Key entities
 - System status: `sensor.dynamic_central_audio_central_audio_status`
@@ -50,9 +49,15 @@
 - Apple TV follow-me: `switch.dynamic_central_audio_central_audio_apple_tv_living_room_follow_me`
 
 ### Sources
-- AirPlay: `media_player.airplay_downstairs`
-- Apple TV: `media_player.living_room_apple_tv`
+- AirPlay: `media_player.airplay_downstairs` — always active (no app filter)
+- Apple TV: `media_player.living_room_apple_tv` — app filter: `com.apple.TVMusic` only (music triggers follow-me; video does not)
 - Volume per zone is set by DCA directly via `media_player.volume_set` using `base_volume + volume_offset` — no helper entities involved
+
+### Garage zone (amp-only)
+- No media player — DCA manages `switch.extra1` (amp) directly via ATV exclusion
+- ATV exclusion: `media_player.garage_apple_tv` → amp on/off; restore: `all_stopped` + 30s delay
+- No `bypass_app_ids` — garage ATV always drives local amp regardless of app
+- Automation `garage_atv_stop_on_amp_off`: amp turns off → ATV stops (no conditions)
 
 ### Camera Sensors (UniFi Protect)
 Each yard camera exposes both a motion sensor and a person-detection sensor. UniFi Protect does NOT expose per-camera motion zones as separate entities — zone granularity lives only inside the Protect app.
@@ -77,8 +82,9 @@ Each yard camera exposes both a motion sensor and a person-detection sensor. Uni
 - Temperature/humidity: `sensor.garage_hygrometer_temperature` / `sensor.garage_hygrometer_humidity`
 - Fan cooling automation: on after 2min presence + outdoor temp >80°F (`weather.forecast_home` temperature attribute); off after 15min mmWave empty
 - Fan door ventilation automation (`garage_fan_door_ventilation`): on when both bay doors open 5+ min + garage temp >60°F, 6am–9am only; off when both doors closed and garage empty
-- Audio off automation: `garage_empty_audio_off` — turns off ATV + amp after 10min empty; condition: ATV playing OR amp on
-- Automations: `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_empty_audio_off`, `garage_fan_door_ventilation`
+- Automation `garage_atv_stop_on_amp_off`: amp (`switch.extra1`) turns off → immediately stops garage ATV (no conditions)
+- DCA handles amp on/off via zone occupancy + ATV exclusion; the automation is the cleanup link
+- Automations: `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_atv_stop_on_amp_off`, `garage_fan_door_ventilation`
 
 ## Fan Lock System
 Built natively into the Adaptive HVAC integration (v0.3.6+). Each zone gets a `switch.adaptive_hvac_<zone>_fan_locked` entity. No external automations or helpers required.

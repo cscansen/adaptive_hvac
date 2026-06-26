@@ -1,0 +1,119 @@
+{
+    "id": "1768187945725",
+    "alias": "Master Bedroom - Occupancy Lights (Day)",
+    "description": "ON when occupied + sleep posture off + not both in bed + (sun down OR bathroom lux < 300). OFF after 5 min unoccupied.",
+    "triggers": [
+        {
+            "id": "mbr_occ_on",
+            "entity_id": "binary_sensor.master_bedroom_occupied",
+            "to": "on",
+            "trigger": "state"
+        },
+        {
+            "id": "mbr_occ_off",
+            "entity_id": "binary_sensor.master_bedroom_occupied",
+            "to": "off",
+            "for": "00:05:00",
+            "trigger": "state"
+        },
+        {
+            "id": "mbr_sunset",
+            "entity_id": "sun.sun",
+            "to": "below_horizon",
+            "trigger": "state"
+        },
+        {
+            "id": "mbr_dark",
+            "entity_id": "sensor.master_bathroom_illuminance",
+            "below": 300,
+            "for": "00:02:00",
+            "trigger": "numeric_state"
+        }
+    ],
+    "conditions": [],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": ["mbr_occ_on", "mbr_dark", "mbr_sunset"]
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.master_bedroom_occupied",
+                            "state": "on"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "input_boolean.master_suite_sleep_posture",
+                            "state": "off"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.master_bed_anyone_in_bed",
+                            "state": "off"
+                        },
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "sun.sun",
+                                    "state": "below_horizon"
+                                },
+                                {
+                                    "condition": "and",
+                                    "conditions": [
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "sun.sun",
+                                            "state": "above_horizon"
+                                        },
+                                        {
+                                            "condition": "numeric_state",
+                                            "entity_id": "sensor.master_bathroom_illuminance",
+                                            "below": 300
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.master_bedroom_manual_lights",
+                                    "light.master_bedroom_nightstands"
+                                ]
+                            },
+                            "action": "light.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "mbr_occ_off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.master_bedroom_manual_lights",
+                                    "light.master_bedroom_nightstands"
+                                ]
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "restart"
+}

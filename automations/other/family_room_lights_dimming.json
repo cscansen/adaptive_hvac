@@ -1,0 +1,82 @@
+{
+    "id": "1768107630247",
+    "alias": "Family Room - Lights (Apple TV Dimming)",
+    "description": "Dim lights to 15% when Apple TV plays, restore previous brightness when paused/idle/off (only if room is still occupied)",
+    "triggers": [
+        {
+            "id": "atv_playing",
+            "entity_id": "media_player.family_room_apple_tv",
+            "to": "playing",
+            "trigger": "state"
+        },
+        {
+            "id": "atv_paused_off",
+            "entity_id": "media_player.family_room_apple_tv",
+            "to": [
+                "paused",
+                "idle",
+                "off"
+            ],
+            "trigger": "state"
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "atv_playing"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "input_number.set_value",
+                            "target": {
+                                "entity_id": "input_number.family_room_lights_brightness_backup"
+                            },
+                            "data": {
+                                "value": "{{ state_attr('light.family_room_lights', 'brightness') | int(default=255) }}"
+                            }
+                        },
+                        {
+                            "action": "light.turn_on",
+                            "target": {
+                                "entity_id": "light.family_room_lights"
+                            },
+                            "data": {
+                                "brightness": 38
+                            }
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "atv_paused_off"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_2",
+                            "state": "on"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "action": "light.turn_on",
+                            "target": {
+                                "entity_id": "light.family_room_lights"
+                            },
+                            "data": {
+                                "brightness": "{{ (states('input_number.family_room_lights_brightness_backup') | float(default=255)) | int }}"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "restart"
+}
