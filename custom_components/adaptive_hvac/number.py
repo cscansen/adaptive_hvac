@@ -34,7 +34,7 @@ async def async_setup_entry(
 
     if entry_type == ENTRY_TYPE_ZONE:
         coordinator = hass.data[DOMAIN][entry.entry_id]
-        async_add_entities([ZoneTargetTempNumber(coordinator)], update_before_add=True)
+        async_add_entities([ZoneTargetTempNumber(coordinator)])
         return
 
     if entry_type != ENTRY_TYPE_SYSTEM:

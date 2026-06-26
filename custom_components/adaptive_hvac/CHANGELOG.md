@@ -15,7 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`pause_all_media_nobody_home` automation revised** — aligned with updated presence helpers.
 
 ### Fixed
-- **`number.{zone}_target_temp` entities unavailable** — deployed v0.3.29/0.3.30 code to HA (was running 0.3.26); `ZoneTargetTempNumber` entities now instantiated and active.
+- **`number.{zone}_target_temp` entities unavailable** — two root causes:
+  1. `binary_sensor.py` was missing from the HA deployment even though `__init__.py` declared the `binary_sensor` platform in v0.3.30, crashing the entire integration on load.
+  2. `ZoneTargetTempNumber` registered with `update_before_add=True`; HA 2026.6 silently drops the entity when the pre-add coordinator refresh races with `async_config_entry_first_refresh` (called after platform setup). Removed `update_before_add`; entities now appear correctly on load.
 
 ## [0.3.30] - 2026-06-17
 
