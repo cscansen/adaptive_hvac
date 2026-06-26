@@ -1,28 +1,28 @@
 {
     "id": "1750000000001",
     "alias": "Media - Stop All When Nobody Home / Rearm On Arrival",
-    "description": "Stop all media and disable dynamic audio when both leave. Re-enable dynamic audio when either returns.",
+    "description": "Stop all media and disable dynamic audio when both leave. Re-enable dynamic audio when either returns. Uses binary_sensor.caleb_home / tia_home which aggregate all tracked devices per person.",
     "triggers": [
         {
             "id": "caleb_left",
             "trigger": "state",
-            "entity_id": "person.caleb_m_scansen",
-            "to": "not_home"
+            "entity_id": "binary_sensor.caleb_home",
+            "to": "off"
         },
         {
             "id": "tia_left",
             "trigger": "state",
-            "entity_id": "person.tia_scansen",
-            "to": "not_home"
+            "entity_id": "binary_sensor.tia_home",
+            "to": "off"
         },
         {
             "id": "someone_home",
             "trigger": "state",
             "entity_id": [
-                "person.caleb_m_scansen",
-                "person.tia_scansen"
+                "binary_sensor.caleb_home",
+                "binary_sensor.tia_home"
             ],
-            "to": "home"
+            "to": "on"
         }
     ],
     "actions": [
@@ -48,13 +48,13 @@
                     "conditions": [
                         {
                             "condition": "state",
-                            "entity_id": "person.caleb_m_scansen",
-                            "state": "not_home"
+                            "entity_id": "binary_sensor.caleb_home",
+                            "state": "off"
                         },
                         {
                             "condition": "state",
-                            "entity_id": "person.tia_scansen",
-                            "state": "not_home"
+                            "entity_id": "binary_sensor.tia_home",
+                            "state": "off"
                         }
                     ],
                     "sequence": [

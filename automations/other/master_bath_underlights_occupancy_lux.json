@@ -1,0 +1,117 @@
+{
+    "id": "1771288057410",
+    "alias": "Master Bath - Underlights (Occupancy + Lux)",
+    "description": "Turn underlights on with occupancy when sun is below horizon, or daytime with lux < 300 (dark/rainy). Block when both in bed. Turn off after 2 min unoccupied.",
+    "triggers": [
+        {
+            "id": "mb_on",
+            "entity_id": "binary_sensor.master_bathroom_occupancy",
+            "to": "on",
+            "for": "00:00:02",
+            "trigger": "state"
+        },
+        {
+            "id": "mb_off",
+            "entity_id": "binary_sensor.master_bathroom_occupancy",
+            "to": "off",
+            "for": "00:02:00",
+            "trigger": "state"
+        },
+        {
+            "id": "mb_sunset",
+            "entity_id": "sun.sun",
+            "to": "below_horizon",
+            "trigger": "state"
+        },
+        {
+            "id": "mb_dark",
+            "entity_id": "sensor.master_bathroom_illuminance",
+            "below": 300,
+            "for": "00:02:00",
+            "trigger": "numeric_state"
+        }
+    ],
+    "conditions": [],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.master_bathroom_occupancy",
+                            "state": "on"
+                        },
+                        {
+                            "condition": "not",
+                            "conditions": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "binary_sensor.master_bed_both_in_bed",
+                                    "state": "on"
+                                }
+                            ]
+                        },
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "sun.sun",
+                                    "state": "below_horizon"
+                                },
+                                {
+                                    "condition": "and",
+                                    "conditions": [
+                                        {
+                                            "condition": "state",
+                                            "entity_id": "sun.sun",
+                                            "state": "above_horizon"
+                                        },
+                                        {
+                                            "condition": "numeric_state",
+                                            "entity_id": "sensor.master_bathroom_illuminance",
+                                            "below": 300
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.led_underlights",
+                                    "light.master_bath_dimmer"
+                                ]
+                            },
+                            "action": "light.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.master_bathroom_occupancy",
+                            "state": "off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.led_underlights",
+                                    "light.master_bath_dimmer"
+                                ]
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "restart"
+}

@@ -1,0 +1,28 @@
+{
+    "id": "garage_atv_stop_on_amp_off",
+    "alias": "Garage - Stop ATV when amp turns off",
+    "description": "When DCA turns off the garage amp (switch.extra1) and the ATV is still playing, stop the ATV. Amp off while ATV is playing means the garage emptied and DCA cleared the override — the ATV was left running with no one there.",
+    "triggers": [
+        {
+            "trigger": "state",
+            "entity_id": "switch.extra1",
+            "to": "off"
+        }
+    ],
+    "conditions": [
+        {
+            "condition": "state",
+            "entity_id": "media_player.garage_apple_tv",
+            "state": "playing"
+        }
+    ],
+    "actions": [
+        {
+            "action": "media_player.turn_off",
+            "target": {
+                "entity_id": "media_player.garage_apple_tv"
+            }
+        }
+    ],
+    "mode": "single"
+}

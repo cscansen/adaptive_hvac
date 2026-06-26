@@ -177,6 +177,37 @@
 # =========================
 # Gazebo Occupied — wind-gated presence
 # =========================
+# =========================
+# Scalable Presence Helpers — any tracked device home = person home
+# Add/remove devices via Settings → People only; no template changes needed
+# =========================
+- binary_sensor:
+    - name: "Caleb Home"
+      unique_id: caleb_home_presence
+      device_class: presence
+      state: >-
+        {% set trackers = state_attr('person.caleb_m_scansen', 'device_trackers') %}
+        {{ trackers is not none and (trackers | map('states') | select('equalto', 'home') | list | length) > 0 }}
+
+    - name: "Tia Home"
+      unique_id: tia_home_presence
+      device_class: presence
+      state: >-
+        {% set trackers = state_attr('person.tia_scansen', 'device_trackers') %}
+        {{ trackers is not none and (trackers | map('states') | select('equalto', 'home') | list | length) > 0 }}
+
+    - name: "Anyone Home"
+      unique_id: anyone_home_presence
+      device_class: presence
+      state: >-
+        {{ is_state('binary_sensor.caleb_home', 'on') or is_state('binary_sensor.tia_home', 'on') }}
+
+    - name: "Nobody Home"
+      unique_id: nobody_home_presence
+      device_class: presence
+      state: >-
+        {{ not is_state('binary_sensor.caleb_home', 'on') and not is_state('binary_sensor.tia_home', 'on') }}
+
 - binary_sensor:
     - name: "Gazebo Occupied"
       unique_id: gazebo_occupied_wind_gated

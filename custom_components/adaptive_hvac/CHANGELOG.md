@@ -4,6 +4,19 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.31] - 2026-06-26
+
+### Added
+- **Presence helpers in `templates.yaml`** — scalable `binary_sensor.caleb_home`, `tia_home`, `anyone_home`, and `nobody_home` derived from `person.*` device trackers. Adding/removing tracking devices via Settings → People requires no template changes.
+- **New automations** — `garage_atv_stop_on_amp_off` (amp off → ATV stops), `master_bath_underlights_occupancy_lux` (lux-gated underlight automation), `master_bedroom_occupancy_lights`, `family_room_lights_dimming`.
+
+### Changed
+- **DCA updated to v0.3.17** — Apple TV source filter (`com.apple.TVMusic` only; video does not trigger follow-me), garage zone switched to amp-only mode (`switch.extra1`) with ATV exclusion.
+- **`pause_all_media_nobody_home` automation revised** — aligned with updated presence helpers.
+
+### Fixed
+- **`number.{zone}_target_temp` entities unavailable** — deployed v0.3.29/0.3.30 code to HA (was running 0.3.26); `ZoneTargetTempNumber` entities now instantiated and active.
+
 ## [0.3.30] - 2026-06-17
 
 ### Added
