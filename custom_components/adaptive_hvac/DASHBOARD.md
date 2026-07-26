@@ -47,6 +47,14 @@ python3 scripts/generate_dashboard.py \
 The script writes `/config/.storage/lovelace.dashboard_hvac` on the HA host
 and fires a `lovelace_updated` event so the browser reloads automatically.
 
+> **A full HA restart is required for changes to actually show up**, despite
+> the `lovelace_updated` event and a browser refresh. HA appears to hold a
+> server-side cached copy of the parsed dashboard config that a raw file
+> overwrite doesn't invalidate — confirmed by deploying a change, verifying
+> the storage file was byte-for-byte correct, and still seeing stale
+> (previously-deleted) cards in the Companion app until HA was restarted.
+> Refreshing the client alone is not enough.
+
 ### Other flags
 
 | Flag | Description |

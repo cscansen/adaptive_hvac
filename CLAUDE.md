@@ -165,41 +165,53 @@ Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, V
 
 ## HVAC System
 
-**Adaptive HVAC v0.3.7** — custom HACS integration. Old 13-automation YAML system is fully replaced. Do not re-enable old automations.
+**Adaptive HVAC v0.3.33** — custom HACS integration (`custom_components/adaptive_hvac/`). Old 13-automation YAML system is fully replaced. Do not re-enable old automations. Full docs: `custom_components/adaptive_hvac/README.md` + `CHANGELOG.md`.
 
 ### Architecture
 - **System entry** — owns the thermostat, reads weather, dispatches heat/cool/off
 - **Zone entries** — one per room; each reads temp sensors, controls local fans, emits thermal requests
 - **Season** — calendar-based only (Oct–Apr = winter, May–Sept = summer); override via `select.adaptive_hvac_season_override`
+- **Night mode** (added 2026-07-26) — separate `number.adaptive_hvac_night_ac_setpoint`/`night_heat_setpoint` used instead of the day setpoints. Activates via `switch.adaptive_hvac_night_mode` (manual), an optional configured source entity (input_boolean/binary_sensor), or the `night_start_hour`/`night_end_hour` time window (default 10pm–6am, not yet customized on this install). `sensor.adaptive_hvac_status` exposes `night_mode_active`.
 
 ### Decision logic
 - Zone: if `temp > zone_target_temp` → fan on (occupied only) + request cool; if `temp ≤ zone_target_temp` → fan off
-- System: cooling allowed if `outdoor ≥ cool_exterior_threshold` (default 60°F, currently set to 68°F) OR any zone is 5°F+ above its target; heat allowed if `outdoor ≤ heat_exterior_threshold` (60°F)
+- System: cooling allowed if `outdoor ≥ cool_exterior_threshold` OR any zone is 5°F+ above its target; heat allowed if `outdoor ≤ heat_exterior_threshold`
 - System: cooling blocked if any zone's window sensor is open (actual contact sensor); emergencies bypass this
+- Dispatched AC/heat setpoint = `ac_setpoint − upstairs_demand_boost` (or `+ boost` for heat), **rounded to a whole degree** (v0.3.33+) — a fractional value used to get silently re-rounded by the thermostat itself, making the displayed setpoint diverge from the dashboard slider
+- Setpoint sliders only push to the thermostat once a zone is actively calling for cool/heat — moving them while idle updates the stored target only, no visible effect until AC/heat next engages (not a bug, just non-obvious)
 - Occupancy gates **local fans only** — thermostat decisions are never blocked by occupancy
 - User fan changes claim that zone's fans until midnight (see Fan Lock System)
 - User thermostat adjustments (faceplate/app) are adopted as the new seasonal setpoint and persisted to config entry options; reset on season change
 
-### Zones (v0.3.7)
+### Zones (v0.3.33) — Garage removed 2026-07-26, see below
 | Zone | Status sensor | Temp sensor | Auto switch | Fan lock switch |
 |------|--------------|-------------|-------------|-----------------|
 | Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
 | Tia's Office | `sensor.tias_office_hvac_status` | `sensor.tias_office_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
 | Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.meter_pro_2689_temperature` | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
-| Garage | `sensor.garage_hvac_status` | `sensor.garage_hygrometer_temperature` | `switch.adaptive_hvac_garage_auto` | `switch.adaptive_hvac_garage_fan_locked` |
+| Living Room | `sensor.living_room_hvac_status` | `sensor.downstairs_thermostat_temperature` | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
+
+### Garage fan control — plain automation, not an HVAC zone
+Removed from Adaptive HVAC entirely (2026-07-26) — it was `affects_thermostat: false` anyway, so this only changes fan control, not AC/heat behavior. Garage fans needed compound logic (door state OR sustained occupancy+heat) the integration's single-threshold-per-zone model doesn't fit; see README's "Zones with compound fan logic" section for the general pattern this is the worked example of.
+
+- `automation.garage_fans_door_occupancy_cooling` (`automations/garage/garage_fans_door_occupancy_cooling.json`) — fans on when both `cover.lexus_garage_door` + `cover.pony_garage_door` are open, OR `binary_sensor.garage_occupied` has been on 10+ min AND `sensor.garage_hygrometer_temperature_2` ≥ `input_number.garage_fan_hot_threshold` (75°F default, dashboard-adjustable slider). Off otherwise. Controls `fan.garage_fans` (confirmed same physical device as `switch.garage_fans`, just presented as a fan entity).
+- Replaced `garage_fan_door_ventilation` (deleted) — that one only ran 6am–9am, had no occupancy branch, and gated on a legacy `input_boolean.fan_user_claimed_garage` helper left over from before the integration got native fan lock (v0.3.6). It was still live and fighting the new automation over the same fans until found and removed.
+- Garage temp/humidity (`sensor.garage_hygrometer_temperature_2`/`_humidity_2`) still shown on the separate `dashboard_temperatures` dashboard — unrelated to Adaptive HVAC, unaffected by the zone removal.
 
 ### Key entities
 - Thermostat: `climate.downstairs_thermostat`
-- System status: `sensor.adaptive_hvac_status` (state = status string, `reasoning` attribute = full decision tree)
+- System status: `sensor.adaptive_hvac_status` (state = status string, `reasoning`/`night_mode_active` attributes = full decision tree)
 - Season: `sensor.adaptive_hvac_season`
 - Mode: `sensor.adaptive_hvac_mode`
 - Active switch: `switch.adaptive_hvac_active`
 - Manual override: `switch.adaptive_hvac_manual_override`
-- Cool exterior threshold: `number.adaptive_hvac_cool_exterior_threshold` (currently 68°F — live dashboard slider)
+- Cooling blocked: `binary_sensor.adaptive_hvac_cooling_blocked` (`reason`/`status` attributes)
 - Upstairs average: `sensor.upstairs_average_temperature` (Caleb + Tia + Master avg, in `templates.yaml`)
 
 ### Dashboard
-`/dashboard-hvac` — system status + reasoning, per-zone cards, upstairs temp glance, thermostat history, logbook with last-off attribution, controls, setpoint sliders, force-evaluate button.
+`/dashboard-hvac` — system status + reasoning (now including Night Mode + Cooling Blocked lines in the markdown card), per-zone cards, zone temp glance, thermostat history, logbook, controls, setpoint sliders (incl. Night Mode card), force-evaluate button. Regenerate via `scripts/generate_dashboard.py` (see `DASHBOARD.md`); also mirrored on-host at `/config/scripts/generate_hvac_dashboard.py` for the in-dashboard "Rebuild Dashboard" button — **keep both copies in sync manually**, they drifted out of sync for over a month before being caught and re-synced 2026-07-26.
+
+**Deploying dashboard changes (SSH or Raw Config Editor) requires a full HA restart to actually take effect** — firing `lovelace_updated` and refreshing the browser is not enough; HA appears to hold a server-side cached copy of the parsed dashboard that a raw storage-file overwrite doesn't invalidate. Confirmed by verifying the deployed file byte-for-byte correct while the Companion app still showed stale cards until an actual restart. This is unlike custom-component Python changes, which *also* need a restart (module caching) — so in practice, any adaptive_hvac change (code or dashboard) needs one.
 
 ### Testing
 ```bash
@@ -214,8 +226,6 @@ curl -s http://ha.iot.scansenconsulting.com:8123/api/states/sensor.adaptive_hvac
 
 ### Known stale entities
 `switch.adaptive_hvac_calebs_office_auto` (no `_2`) — orphaned registry entry, unavailable, safe to ignore. The `_2` variant is the live one.
-
-**For complete configuration:** See `docs/adaptive_hvac.md`
 
 ## Notes
 - Still learning HA — update this file as patterns emerge
