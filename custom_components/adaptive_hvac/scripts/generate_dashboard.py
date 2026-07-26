@@ -230,6 +230,12 @@ def markdown_card(zones: list[dict]) -> dict:
         "**Fan:** {{ states('sensor.thermostat_fan_state') | upper }}",
         "",
         "**Reasoning:** {{ state_attr('sensor.adaptive_hvac_status', 'reasoning') or '—' }}",
+        "",
+        "**Night Mode:** {{ 'ACTIVE 🌙' if state_attr('sensor.adaptive_hvac_status', 'night_mode_active') "
+        "else 'inactive' }}",
+        "",
+        "**Cooling Blocked:** {{ 'YES ⚠️ — ' + (state_attr('binary_sensor.adaptive_hvac_cooling_blocked', 'reason') or '') "
+        "if is_state('binary_sensor.adaptive_hvac_cooling_blocked', 'on') else 'no' }}",
     ]
     for z in zones:
         lines.append(f"\n**{z['title']}:** {{{{ states('sensor.{z['slug']}_hvac_status') }}}}")
