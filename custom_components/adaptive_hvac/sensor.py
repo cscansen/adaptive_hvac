@@ -126,7 +126,9 @@ class ZoneStatusSensor(CoordinatorEntity, SensorEntity):
             "fans": cfg.get("fans", []),
             "floor": cfg.get("floor", ""),
             "affects_thermostat": cfg.get("affects_thermostat", True),
-            "zone_target_temp": cfg.get("zone_target_temp", 72.0),
+            # Live runtime value (dashboard-adjustable), not the static config-flow default —
+            # cfg["zone_target_temp"] goes stale the moment the dashboard slider is used.
+            "zone_target_temp": self.coordinator.runtime_target_temp,
         }
         if not decision:
             return base
