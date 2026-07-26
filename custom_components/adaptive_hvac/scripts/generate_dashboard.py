@@ -368,6 +368,19 @@ def controls_card() -> dict:
             {"entity": "switch.adaptive_hvac_active", "name": "Active"},
             {"entity": "switch.adaptive_hvac_manual_override", "name": "Manual Override"},
             {"entity": "select.adaptive_hvac_season_override", "name": "Season Override"},
+            {"entity": "switch.adaptive_hvac_night_mode", "name": "Night Mode"},
+        ],
+    }
+
+
+def night_mode_card() -> dict:
+    return {
+        "type": "entities",
+        "title": "Night Mode",
+        "entities": [
+            {"entity": "switch.adaptive_hvac_night_mode", "name": "Night Mode Active"},
+            {"entity": "number.adaptive_hvac_night_ac_setpoint", "name": "Night AC Setpoint"},
+            {"entity": "number.adaptive_hvac_night_heat_setpoint", "name": "Night Heat Setpoint"},
         ],
     }
 
@@ -432,6 +445,7 @@ def build_dashboard(zones: list[dict], sys_cfg: dict) -> dict:
         history_graph_card(thermostat, zones),
         controls_card(),
         setpoints_card(),
+        night_mode_card(),
         logbook_card(thermostat),
         force_evaluate_button(),
         rebuild_dashboard_button(),

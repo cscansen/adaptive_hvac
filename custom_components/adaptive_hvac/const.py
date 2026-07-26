@@ -79,6 +79,21 @@ CONF_FAN_CIRCULATION_DELTA = "fan_circulation_delta"
 # System — Whole-house fan entity (thermostat fan mode)
 DEFAULT_WHOLE_HOUSE_FAN_ENTITY = "climate.downstairs_thermostat"
 
+# System — Night mode: separate setpoints used while night mode is active
+DEFAULT_NIGHT_AC_SETPOINT = 70.0   # °F
+DEFAULT_NIGHT_HEAT_SETPOINT = 66.0  # °F
+CONF_NIGHT_AC_SETPOINT = "night_ac_setpoint"
+CONF_NIGHT_HEAT_SETPOINT = "night_heat_setpoint"
+
+# System — Night mode: time window (used when no manual toggle / source entity is on)
+DEFAULT_NIGHT_START_HOUR = 22  # 10pm
+DEFAULT_NIGHT_END_HOUR = 6     # 6am
+CONF_NIGHT_START_HOUR = "night_start_hour"
+CONF_NIGHT_END_HOUR = "night_end_hour"
+
+# System — Night mode: optional external boolean that also activates night mode when "on"
+CONF_NIGHT_MODE_SOURCE_ENTITY = "night_mode_source_entity"
+
 # ===== DEFAULTS (ZONE) =====
 
 # Zone — Target temp (single threshold: fan on above this, fan off at/below)

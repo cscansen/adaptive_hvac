@@ -24,6 +24,7 @@ async def async_setup_entry(
         entities = [
             SystemActiveSwitch(coordinator),
             ManualOverrideSwitch(coordinator),
+            NightModeSwitch(coordinator),
         ]
         async_add_entities(entities)
     elif entry_type == ENTRY_TYPE_ZONE:
@@ -88,6 +89,34 @@ class ManualOverrideSwitch(CoordinatorEntity, SwitchEntity):
         self.coordinator.system_config["manual_override"] = False
         self.async_write_ha_state()
         await self.coordinator.async_refresh()
+
+
+class NightModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Manual night mode toggle — ON forces night setpoints regardless of time window."""
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_night_mode"
+        self._attr_name = "Adaptive HVAC Night Mode"
+        self._attr_icon = "mdi:weather-night"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last_state := await self.async_get_last_state()) is not None:
+            self.coordinator._night_mode_manual = last_state.state == "on"
+            self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.night_mode_manual
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.coordinator.set_night_mode_manual(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.coordinator.set_night_mode_manual(False)
+        self.async_write_ha_state()
 
 
 class ZoneAutoControlSwitch(RestoreEntity, SwitchEntity):

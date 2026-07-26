@@ -58,6 +58,7 @@ class SystemStatusSensor(CoordinatorEntity, SensorEntity):
         base = {
             "thermostat_entity": cfg.get("thermostat_entity", ""),
             "outdoor_temp_sensor": cfg.get("outdoor_temp_sensor") or cfg.get("weather_entity", ""),
+            "night_mode_active": self.coordinator.night_mode_active,
         }
         decision = self.coordinator.last_decision
         if not decision:
