@@ -4,6 +4,40 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.33] - 2026-07-26
+
+### Removed
+- **Garage zone** — removed from Adaptive HVAC entirely (was already `affects_thermostat: false`,
+  fans-only). Garage fan control now lives in a plain HA automation
+  (`garage_fans_door_occupancy_cooling`) instead: fans on when both garage doors are open, or when
+  occupied 10+ min and above an adjustable `input_number.garage_fan_hot_threshold` (75°F default).
+  Replaces an older, narrower automation (`garage_fan_door_ventilation`, 6am–9am only, no occupancy
+  branch, gated on a legacy helper) that was still live and fighting the new one over the same fans
+  until it was found and deleted. See the README's "Zones with compound fan logic" section — this is
+  the worked example of that pattern: turn the zone's auto-control off, hand the fan to a real
+  automation. Only 4 zones remain: Caleb's Office, Tia's Office, Master Bedroom, Living Room.
+
+### Fixed
+- **`sensor.{zone}_hvac_status`'s `zone_target_temp` attribute could go stale** — it read the static
+  config-entry value instead of `coordinator.runtime_target_temp` (the live, dashboard-adjustable
+  value actually driving decisions). Confirmed live for 2 of 5 zones at the time (Garage showed 85°F
+  while every real decision used 72°F; Living Room showed 70°F vs. the actual 68°F). Control was
+  never affected — only the displayed attribute drifted the moment someone touched the dashboard
+  slider. Now reads the live value.
+
+### Added
+- **Dashboard markdown card surfaces night mode + cooling-blocked status directly** — added
+  "Night Mode: ACTIVE 🌙 / inactive" and "Cooling Blocked: no / YES ⚠️ — `<reason>`" lines so both
+  are visible in the debug/status text at a glance instead of requiring an attribute lookup.
+
+### Note
+- **Dashboard changes deployed by overwriting `.storage/lovelace.dashboard_hvac` directly require a
+  full HA restart to actually take effect** — firing the `lovelace_updated` event and refreshing the
+  browser is not sufficient; HA appears to hold a cached copy of the parsed dashboard config
+  server-side that a raw file overwrite doesn't invalidate. Confirmed: dashboard content verified
+  byte-for-byte correct in storage while the Companion app kept showing stale (deleted) cards until
+  an actual HA restart.
+
 ## [0.3.32] - 2026-07-26
 
 ### Added
