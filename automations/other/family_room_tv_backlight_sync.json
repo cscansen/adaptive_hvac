@@ -1,0 +1,202 @@
+{
+    "id": "1768107735275",
+    "alias": "Family Room TV Backlight - Sync",
+    "description": "Turn TV backlight on/off with Apple TV playback state; reconciles to current Apple TV state whenever the Govee bulb reconnects after being unavailable, and also on HA restart (LAN integration is slow to rejoin after HA restarts). Reconciliation only trusts 'playing'/'buffering' as active — 'paused' is excluded because pyatv can get stuck reporting paused for hours after playback actually stopped, and forcing the light on from a stale paused read right at boot/reconnect was turning it on incorrectly on every HA restart. Also treats a media_player stuck at paused for 20min unchanged as effectively off.",
+    "triggers": [
+        {
+            "id": "atv_active",
+            "trigger": "state",
+            "entity_id": "media_player.family_room_apple_tv",
+            "to": [
+                "playing",
+                "paused",
+                "buffering"
+            ]
+        },
+        {
+            "id": "atv_inactive",
+            "trigger": "state",
+            "entity_id": "media_player.family_room_apple_tv",
+            "to": [
+                "off",
+                "idle",
+                "standby"
+            ]
+        },
+        {
+            "id": "light_reconnected",
+            "trigger": "state",
+            "entity_id": "light.h6169",
+            "from": "unavailable"
+        },
+        {
+            "id": "ha_start",
+            "trigger": "homeassistant",
+            "event": "start"
+        },
+        {
+            "id": "atv_stuck_paused",
+            "trigger": "state",
+            "entity_id": "media_player.family_room_apple_tv",
+            "to": "paused",
+            "for": {
+                "minutes": 20
+            }
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ trigger.id == 'atv_active' }}"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ trigger.id == 'atv_inactive' }}"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "light_reconnected"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "media_player.family_room_apple_tv",
+                            "state": [
+                                "playing",
+                                "buffering"
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "light_reconnected"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "media_player.family_room_apple_tv",
+                            "state": [
+                                "off",
+                                "idle",
+                                "standby",
+                                "paused"
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "ha_start"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "media_player.family_room_apple_tv",
+                            "state": [
+                                "playing",
+                                "buffering"
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "ha_start"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "media_player.family_room_apple_tv",
+                            "state": [
+                                "off",
+                                "idle",
+                                "standby",
+                                "paused"
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "atv_stuck_paused"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": "light.h6169"
+                            },
+                            "action": "light.turn_off"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "restart"
+}
