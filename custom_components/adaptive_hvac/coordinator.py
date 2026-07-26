@@ -32,6 +32,10 @@ from .const import (
     DEFAULT_AFFECTS_THERMOSTAT,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
+    DEFAULT_NIGHT_AC_SETPOINT,
+    DEFAULT_NIGHT_HEAT_SETPOINT,
+    DEFAULT_NIGHT_START_HOUR,
+    DEFAULT_NIGHT_END_HOUR,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -302,6 +306,8 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._suppress_setpoint_reload: bool = False
         self._failsafe_cycle_count: int = 0
         self._degraded_mode: bool = False
+        self._night_mode_manual: bool = False
+        self.night_mode_active: bool = False
 
     def determine_calendar_season(self) -> str:
         """Determine season — respects manual override, otherwise calendar-based."""
@@ -420,6 +426,34 @@ class SystemCoordinator(DataUpdateCoordinator):
         if not entities:
             return True
         return any(self.hass.states.is_state(e, "on") for e in entities)
+
+    @property
+    def night_mode_manual(self) -> bool:
+        return self._night_mode_manual
+
+    def set_night_mode_manual(self, enabled: bool) -> None:
+        """Manually toggle night mode via switch.adaptive_hvac_night_mode."""
+        self._night_mode_manual = enabled
+        if self.last_decision is not None:
+            self.async_set_updated_data(self.last_decision)
+        self.hass.async_create_task(self.async_refresh())
+
+    def _is_night_mode_active(self) -> bool:
+        """Night mode is active if manually toggled on, a configured source entity is on,
+        or the current hour falls within the configured night time window."""
+        if self._night_mode_manual:
+            return True
+
+        source_entity = self.system_config.get("night_mode_source_entity")
+        if source_entity and self.hass.states.is_state(source_entity, "on"):
+            return True
+
+        start = int(self.system_config.get("night_start_hour", DEFAULT_NIGHT_START_HOUR))
+        end = int(self.system_config.get("night_end_hour", DEFAULT_NIGHT_END_HOUR))
+        hour = dt_util.now().hour
+        if start > end:
+            return hour >= start or hour < end
+        return start <= hour < end
 
     def _effective_setpoint(self, key: str, default: float) -> float:
         """Read setpoint: options override > system_config > const default."""
@@ -586,9 +620,17 @@ class SystemCoordinator(DataUpdateCoordinator):
             windows_openable=windows_openable,
         )
 
+        self.night_mode_active = self._is_night_mode_active()
+        if self.night_mode_active:
+            ac_setpoint = self._effective_setpoint("night_ac_setpoint", DEFAULT_NIGHT_AC_SETPOINT)
+            heat_setpoint = self._effective_setpoint("night_heat_setpoint", DEFAULT_NIGHT_HEAT_SETPOINT)
+        else:
+            ac_setpoint = self._effective_setpoint("ac_setpoint", DEFAULT_AC_SETPOINT)
+            heat_setpoint = self._effective_setpoint("heat_setpoint", DEFAULT_HEAT_SETPOINT)
+
         cfg = SystemConfig(
-            ac_setpoint=self._effective_setpoint("ac_setpoint", DEFAULT_AC_SETPOINT),
-            heat_setpoint=self._effective_setpoint("heat_setpoint", DEFAULT_HEAT_SETPOINT),
+            ac_setpoint=ac_setpoint,
+            heat_setpoint=heat_setpoint,
             heat_threshold=float(self.system_config.get("heat_threshold", DEFAULT_HEAT_THRESHOLD)),
             emergency_heat_threshold=float(self.system_config.get("emergency_heat_threshold", DEFAULT_EMERGENCY_HEAT_THRESHOLD)),
             cool_exterior_threshold=float(self.system_config.get("cool_exterior_threshold", DEFAULT_COOL_EXTERIOR_THRESHOLD)),
@@ -599,6 +641,8 @@ class SystemCoordinator(DataUpdateCoordinator):
         )
 
         decision = decide_system(sys_state, zone_decisions, cfg)
+        if self.night_mode_active:
+            decision.reasoning.insert(1, f"Night mode active — using night setpoints (AC {ac_setpoint:.0f}°F / Heat {heat_setpoint:.0f}°F)")
         self.last_decision = decision
 
         # Relabel zone decisions to reflect actual system state (passive vs active)

@@ -4,6 +4,33 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.32] - 2026-07-26
+
+### Added
+- **Night mode** — a separate `number.adaptive_hvac_night_ac_setpoint` /
+  `number.adaptive_hvac_night_heat_setpoint` pair used instead of the normal setpoints
+  whenever night mode is active. Night mode activates from any of three sources (first
+  match wins): the new `switch.adaptive_hvac_night_mode` manual toggle, a configured
+  optional `night_mode_source_entity` (any `input_boolean`/`binary_sensor` — e.g. an
+  existing sleep-posture helper), or the configurable `night_start_hour`/`night_end_hour`
+  time window (default 10pm–6am). Configure the source entity and time window via
+  Settings → Integrations → Adaptive HVAC (System) → Configure. `sensor.adaptive_hvac_status`
+  exposes `night_mode_active` and the reasoning attribute notes when night setpoints are
+  in effect. Added to the generated dashboard as its own "Night Mode" card.
+
+### Fixed
+- **AC/heat setpoint dispatched to the thermostat could be a half-degree value** (e.g.
+  68°F setpoint − 1.5°F demand boost = 66.5°F) that most thermostats silently round
+  themselves, producing a displayed setpoint that no longer matches the dashboard slider
+  the value was meant to reflect. `decide_system()` now rounds the demand-boost-adjusted
+  setpoint to a whole degree (half rounds up) before dispatch, so what reaches the
+  thermostat is always a value it can display exactly.
+- **Clarified (not a bug, but confusing in practice):** the AC/heat setpoint sliders only
+  push a new value to the physical thermostat once a zone is actively calling for
+  cool/heat — moving the slider while the system is idle updates the stored target only
+  and has no visible effect until the next time AC/heat actually engages. Documented in
+  the README "Thermostat setpoint ownership" section.
+
 ## [0.3.31] - 2026-06-26
 
 ### Added

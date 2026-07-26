@@ -1,7 +1,14 @@
 """Pure decision engine for Adaptive HVAC — no Home Assistant imports."""
 
+import math
 from dataclasses import dataclass, field, replace
 from typing import Optional
+
+
+def _round_half_up(value: float) -> float:
+    """Round to the nearest whole degree, halves rounding up (not Python's banker's
+    rounding) — matches how thermostats round a fractional setpoint they receive."""
+    return math.floor(value + 0.5)
 
 
 @dataclass
@@ -346,7 +353,10 @@ def decide_system(
 
             if allow_cool:
                 boost = cfg.upstairs_demand_boost if cooling_zones else 0.0
-                adjusted_setpoint = cfg.ac_setpoint - boost
+                # Round to a whole degree — most thermostats only accept integer setpoints and
+                # silently round a fractional value themselves, which then no longer matches
+                # what the dashboard shows (e.g. 68 - 1.5 = 66.5 silently became 67 on the device).
+                adjusted_setpoint = _round_half_up(cfg.ac_setpoint - boost)
                 if boost > 0:
                     reasoning.append(
                         f"Upstairs demand boost: setpoint {cfg.ac_setpoint:.0f}°F → {adjusted_setpoint:.0f}°F"
@@ -379,7 +389,7 @@ def decide_system(
             if allow_heat:
                 reasoning.append(f"Heat allowed: outdoor {outdoor:.1f}°F ≤ {cfg.heat_exterior_threshold:.1f}°F")
                 boost = cfg.upstairs_demand_boost if heating_zones else 0.0
-                adjusted_setpoint = cfg.heat_setpoint + boost
+                adjusted_setpoint = _round_half_up(cfg.heat_setpoint + boost)
                 if boost > 0:
                     reasoning.append(
                         f"Upstairs demand boost: setpoint {cfg.heat_setpoint:.0f}°F → {adjusted_setpoint:.0f}°F"

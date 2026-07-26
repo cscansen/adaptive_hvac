@@ -65,7 +65,8 @@ configuration is required. For each configured zone it creates:
 - Correct entity IDs regardless of HA's internal deduplication suffixes
 
 The system section includes season, mode, setpoint, thermostat temperature,
-outdoor temperature, humidity, controls, setpoint sliders, and a history graph.
+outdoor temperature, humidity, controls, setpoint sliders, a night mode card
+(toggle + night setpoint sliders), and a history graph.
 
 ## Running directly on the HA host (no token required)
 

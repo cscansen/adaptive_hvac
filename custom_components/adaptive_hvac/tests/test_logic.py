@@ -372,6 +372,22 @@ class TestSummerCooling:
         assert decision.thermostat_hvac_mode == "cool"
         assert any("conditions poor" in r for r in decision.reasoning)
 
+    def test_demand_boost_setpoint_rounds_to_whole_degree(self):
+        """
+        A fractional demand boost (e.g. 1.5°F) must not produce a fractional
+        dispatched setpoint (e.g. 66.5°F) — most thermostats only accept whole
+        degrees and silently round it themselves, which then no longer matches
+        what the dashboard displays. The integration must round before dispatch.
+        """
+        z = zone(temp=78.0, target=72.0)
+        ss = sys_state([z], outdoor=75.0, season="summer")
+        cfg = SystemConfig(ac_setpoint=68.0, upstairs_demand_boost=1.5, cool_exterior_threshold=60.0)
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), cfg)]
+        decision = decide_system(ss, zone_decisions, cfg)
+        assert decision.thermostat_hvac_mode == "cool"
+        assert decision.thermostat_setpoint == 67.0  # round(68.0 - 1.5) == 67, not 66.5
+        assert decision.thermostat_setpoint == int(decision.thermostat_setpoint)
+
 
 # ---------------------------------------------------------------------------
 # Winter heating gating

@@ -69,6 +69,9 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | Sensor staleness window | 60 min | Flag sensors that haven't reported within this window |
 | Winter start month | October | Calendar month winter begins |
 | Winter end month | April | Calendar month winter ends |
+| Night start hour | 10pm | Hour night mode's time window begins (0–23) |
+| Night end hour | 6am | Hour night mode's time window ends (0–23) |
+| Night mode source entity | — | Optional. `input_boolean`/`binary_sensor` — when "on", night mode is active regardless of time window |
 
 ## Zone setup
 
@@ -93,7 +96,7 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 | Entity | Description |
 |--------|-------------|
-| `sensor.adaptive_hvac_status` | Current decision + full reasoning. Attributes include `thermostat_entity`, `outdoor_temp_sensor`, `thermostat_mode`, `thermostat_setpoint`, `whole_house_fan`, `season`, `reasoning` |
+| `sensor.adaptive_hvac_status` | Current decision + full reasoning. Attributes include `thermostat_entity`, `outdoor_temp_sensor`, `thermostat_mode`, `thermostat_setpoint`, `whole_house_fan`, `season`, `night_mode_active`, `reasoning` |
 | `sensor.adaptive_hvac_mode` | Thermostat mode (cool / heat / off) |
 | `sensor.adaptive_hvac_season` | Current season (summer / winter) |
 | `select.adaptive_hvac_season_override` | Force summer / winter for testing |
@@ -107,6 +110,9 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | `number.adaptive_hvac_heat_threshold` | Heat trigger temp (live adjustable) |
 | `number.adaptive_hvac_emergency_cool_threshold` | Emergency cool threshold |
 | `number.adaptive_hvac_emergency_heat_threshold` | Emergency heat threshold |
+| `switch.adaptive_hvac_night_mode` | Manual night mode toggle |
+| `number.adaptive_hvac_night_ac_setpoint` | AC setpoint used while night mode is active |
+| `number.adaptive_hvac_night_heat_setpoint` | Heat setpoint used while night mode is active |
 
 **Each zone entry:**
 
@@ -136,6 +142,32 @@ When you adjust the thermostat setpoint from the **HA app or UI**, the integrati
 
 Use the **`number.adaptive_hvac_ac_setpoint` dashboard slider** as the primary way to adjust the cooling target — it persists immediately without waiting for a thermostat interaction.
 
+> **The slider only reaches the physical thermostat once a zone is actively calling for
+> cool/heat.** If the system is currently idle, moving the slider updates the stored
+> target immediately but the thermostat's own displayed setpoint won't change until the
+> next time AC/heat actually engages — this is expected, not a bug. Use **Force Evaluate
+> Now** to trigger an immediate decision if you want to confirm the new value took.
+>
+> The value actually sent to the thermostat is `ac_setpoint − upstairs_demand_boost`
+> (or `+ boost` for heat), rounded to the nearest whole degree — so the thermostat's
+> displayed setpoint may legitimately differ from the slider by the boost amount.
+
+## Night mode
+
+A separate setpoint pair used whenever night mode is active, so you don't have to
+manually push the day setpoint down every evening and back up every morning.
+
+- `number.adaptive_hvac_night_ac_setpoint` / `number.adaptive_hvac_night_heat_setpoint` —
+  live-adjustable, same as the day setpoints. Only take effect while night mode is active.
+- Night mode activates from **any** of these (first match wins):
+  1. `switch.adaptive_hvac_night_mode` — manual toggle, dashboard or automation.
+  2. An optional `night_mode_source_entity` (any `input_boolean` or `binary_sensor`) —
+     configure this in System → Configure to bind night mode to an existing helper, e.g.
+     `input_boolean.downstairs_sleep_posture`.
+  3. The configured time window (`night_start_hour`–`night_end_hour`, default 10pm–6am).
+- `sensor.adaptive_hvac_status` exposes `night_mode_active` and notes it in `reasoning`
+  when in effect.
+
 ## Dashboard
 
 The integration ships with a dashboard generator that builds a fully populated Lovelace HVAC dashboard from your live zone configuration. No manual editing required; re-run whenever zones are added or removed.
@@ -143,6 +175,23 @@ The integration ships with a dashboard generator that builds a fully populated L
 See **[DASHBOARD.md](DASHBOARD.md)** for full setup instructions.
 
 The generated dashboard includes a **Rebuild Dashboard** button that regenerates the dashboard in place without a token — one tap from the UI.
+
+## Zones with compound fan logic (e.g. garage)
+
+The per-zone rule is intentionally simple: one temp threshold, fan on above it. Some
+spaces need compound logic the integration doesn't model — e.g. "run the garage fans if
+the doors are open, OR if someone's been out there a while and it's hot." Rather than
+special-casing that into the integration, turn the zone's own control off and let a
+plain HA automation own the fan instead:
+
+1. Turn `switch.adaptive_hvac_{zone}_auto` **off** — the zone's status/temp sensors keep
+   reporting for the dashboard, but the integration stops touching its fans.
+2. Write a normal HA automation against the fan entity directly, using whatever
+   combination of door/cover, occupancy-with-duration, and temperature conditions the
+   space needs.
+
+This keeps the integration's zone model simple while letting oddball spaces have
+however-complex logic they actually need.
 
 ## Diagnosing decisions
 

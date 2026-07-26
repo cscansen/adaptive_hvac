@@ -20,6 +20,8 @@ from .const import (
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
     DEFAULT_ZONE_TARGET_TEMP,
+    DEFAULT_NIGHT_AC_SETPOINT,
+    DEFAULT_NIGHT_HEAT_SETPOINT,
 )
 from .coordinator import SystemCoordinator, ZoneCoordinator
 
@@ -51,6 +53,8 @@ async def async_setup_entry(
         CoolExteriorThresholdNumber(coordinator),
         UpstairsDemandBoostNumber(coordinator),
         FanCirculationDeltaNumber(coordinator),
+        NightACSetpointNumber(coordinator),
+        NightHeatSetpointNumber(coordinator),
     ])
 
 
@@ -202,6 +206,38 @@ class FanCirculationDeltaNumber(_BaseSystemNumber):
         self._attr_native_min_value = 0.5
         self._attr_native_max_value = 5.0
         self._attr_native_step = 0.5
+
+
+class NightACSetpointNumber(_BaseSystemNumber):
+    """AC cooling setpoint used while night mode is active."""
+    _config_key = "night_ac_setpoint"
+    _default = DEFAULT_NIGHT_AC_SETPOINT
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_night_ac_setpoint"
+        self._attr_name = "Adaptive HVAC Night AC Setpoint"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 60.0
+        self._attr_native_max_value = 78.0
+        self._attr_native_step = 1.0
+        self._attr_icon = "mdi:weather-night"
+
+
+class NightHeatSetpointNumber(_BaseSystemNumber):
+    """Heat mode setpoint used while night mode is active."""
+    _config_key = "night_heat_setpoint"
+    _default = DEFAULT_NIGHT_HEAT_SETPOINT
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_night_heat_setpoint"
+        self._attr_name = "Adaptive HVAC Night Heat Setpoint"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 55.0
+        self._attr_native_max_value = 75.0
+        self._attr_native_step = 1.0
+        self._attr_icon = "mdi:weather-night"
 
 
 class ZoneTargetTempNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
