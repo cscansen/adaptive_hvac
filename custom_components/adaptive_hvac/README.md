@@ -20,11 +20,65 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 
 **System (thermostat):**
 - Summer: run AC if any room needs it AND outdoor temp ≥ exterior threshold (default 60°F) AND outdoor temp ≥ zone comfort target — if it's cooler outside than the room's target, open windows instead; no AC
-- Summer: AC also blocked if any zone's window sensor is open (only zones with `affects_thermostat = ON`; emergencies bypass)
+- Winter: run heat if any room needs it AND outdoor temp ≤ heat exterior threshold (default 60°F) AND outdoor temp ≤ the *warmest* zone still asking — if it's warmer outside than that, open windows instead; no heat
+- Either season: conditioning is blocked if any zone's window sensor is open (only zones with `affects_thermostat = ON`; emergencies bypass). The house is being aired out on purpose — don't fight it.
 - Any room 5°F above its target bypasses the exterior threshold gate (interior override)
 - When any zone requests cooling, the AC setpoint is lowered by the **demand boost** amount (default 1°F) to push harder
-- Winter: run heat if any room needs it AND outdoor temp ≤ 60°F
 - All thresholds are configurable via dashboard sliders; no restart required
+
+## Air quality & windows
+
+Two separate things, often confused:
+
+**1. AQI never unblocks the HVAC.** If it's cooler outside than your targets, the AC stays
+off whether the air is clean or full of wildfire smoke. What air quality changes is the
+*reason code and the message*, so the system stops cheerfully telling you to open the
+windows during a smoke event. Point `aqi_sensor` (setup step 1 / Reconfigure) at any
+sensor reporting US AQI; `number.adaptive_hvac_aqi_threshold` is the ceiling, default 50
+(EPA "Good"). Note that summer ozone routinely pushes AQI past 50 with clean particulates
+— raise it if you find the recommendation too shy.
+
+> **Fail closed:** a *configured* AQI sensor that goes unavailable counts as bad air, so a
+> dead sensor can never produce an "open your windows" recommendation. With no sensor
+> configured at all, behavior is exactly as it was before air quality existed.
+
+**2. `binary_sensor.adaptive_hvac_windows_recommended` is advisory only** — it never gates
+the thermostat. It's an **absolute 60-75°F band** (`window_min_outdoor` / `window_max_outdoor`)
+requiring no rain, no high wind, and clean air.
+
+It is deliberately **independent of season and of your zone targets**, which is not the
+obvious implementation. The season model is binary and calendar-driven — all of October
+reads as "winter" — so a target-relative rule would refuse to suggest windows on a 62°F
+October afternoon because 62 < the 68°F heat target. That shoulder-season case is the
+whole point. `test_windows_recommended_in_october_shoulder_season` guards this.
+
+The one overlap to know about: at 74°F outdoors with a 72°F target, the band still says
+"open up" while a zone wants cooling. Slide `window_max_outdoor` down to 72 rather than
+expecting logic to resolve it — the two band sliders are the seasonal-feel knobs.
+
+### Blocked reason codes
+
+`binary_sensor.adaptive_hvac_cooling_blocked` and `..._heating_blocked` each carry a
+machine-readable `blocked_reason` (surfaced only on whichever one is actually blocked),
+so notifications branch per cause instead of string-matching free text:
+
+| Summer | Winter | Meaning |
+|---|---|---|
+| `window_open` | `window_open_heat` | A window is open; airing out wins |
+| `outdoor_cold` | `outdoor_warm` | Past the exterior threshold, no interior override |
+| `open_windows_better` | `open_windows_warm` | Outdoor air would do the job, and it's clean |
+| `aqi_hold` | `aqi_hold_heat` | Outdoor air would do the job, but it's smoky |
+
+**The smoke-hold trade-off:** `aqi_hold` means the AC is off (cooler outside) *and* opening
+up is a bad idea. The house coasts until the 85°F emergency-cool threshold or you step in;
+winter mirrors this at 55°F. Both smoke-hold notifications are time-sensitive and carry a
+one-tap "Run HVAC anyway" action wired to `switch.adaptive_hvac_manual_override`.
+
+> **Gotcha — the winter relative gate can be unreachable.** `heat_exterior_threshold`
+> always fires first, so while it sits *below* every zone target, `open_windows_warm` can
+> never happen (you'd need outdoor ≤ threshold and outdoor > target simultaneously). With
+> the default 60°F against 68-70°F targets it is inert. Raise
+> `number.adaptive_hvac_heat_exterior_threshold` above your warmest zone target to enable it.
 
 **Floor fan circulation:**
 - Zones are grouped by their HA floor assignment
@@ -108,8 +162,16 @@ A custom Home Assistant integration for simple, reliable whole-house HVAC contro
 | `number.adaptive_hvac_cool_exterior_threshold` | Outdoor temp gate for AC (live adjustable) |
 | `number.adaptive_hvac_heat_setpoint` | Heat setpoint (live adjustable) |
 | `number.adaptive_hvac_heat_threshold` | Heat trigger temp (live adjustable) |
+| `number.adaptive_hvac_heat_exterior_threshold` | Outdoor temp gate for heat. Also the ceiling on the winter relative gate — see the gotcha above |
 | `number.adaptive_hvac_emergency_cool_threshold` | Emergency cool threshold |
 | `number.adaptive_hvac_emergency_heat_threshold` | Emergency heat threshold |
+| `binary_sensor.adaptive_hvac_cooling_blocked` | Zones want AC, a gate says no. Attributes: `reason`, `blocked_reason`, `status`, `aqi`, `aqi_category`, `windows_recommended` |
+| `binary_sensor.adaptive_hvac_heating_blocked` | Winter mirror of the above |
+| `binary_sensor.adaptive_hvac_windows_recommended` | Advisory only — outdoor air is in-band, calm, dry and clean. Attributes: `outdoor_temp`, `aqi`, `aqi_category`, `aqi_ok`, `weather_ok`, `band_min`, `band_max` |
+| `sensor.adaptive_hvac_air_quality` | Outdoor US AQI as the engine sees it. Attributes: `category`, `aqi_ok`, `threshold`, `source_entity` |
+| `number.adaptive_hvac_aqi_threshold` | AQI ceiling for recommending windows (25–200, default 50) |
+| `number.adaptive_hvac_window_min_outdoor` | Bottom of the windows-recommended band (45–70°F, default 60) |
+| `number.adaptive_hvac_window_max_outdoor` | Top of the windows-recommended band (65–85°F, default 75) |
 | `switch.adaptive_hvac_night_mode` | Manual night mode toggle |
 | `number.adaptive_hvac_night_ac_setpoint` | AC setpoint used while night mode is active |
 | `number.adaptive_hvac_night_heat_setpoint` | Heat setpoint used while night mode is active |
@@ -159,12 +221,16 @@ manually push the day setpoint down every evening and back up every morning.
 
 - `number.adaptive_hvac_night_ac_setpoint` / `number.adaptive_hvac_night_heat_setpoint` —
   live-adjustable, same as the day setpoints. Only take effect while night mode is active.
+- `number.adaptive_hvac_night_start_hour` / `number.adaptive_hvac_night_end_hour` —
+  live-adjustable schedule window (0-23, default 22/6). **Dashboard-only** — there is no
+  setup-wizard prompt for these; see "Required: deploy the dashboard" below.
 - Night mode activates from **any** of these (first match wins):
   1. `switch.adaptive_hvac_night_mode` — manual toggle, dashboard or automation.
   2. An optional `night_mode_source_entity` (any `input_boolean` or `binary_sensor`) —
      configure this in System → Configure to bind night mode to an existing helper, e.g.
      `input_boolean.downstairs_sleep_posture`.
-  3. The configured time window (`night_start_hour`–`night_end_hour`, default 10pm–6am).
+  3. The configured time window (`night_start_hour`–`night_end_hour`, default 10pm–6am,
+     adjustable only via the `number` entities above).
 - `sensor.adaptive_hvac_status` exposes `night_mode_active` and notes it in `reasoning`
   when in effect.
 
@@ -172,9 +238,21 @@ manually push the day setpoint down every evening and back up every morning.
 
 The integration ships with a dashboard generator that builds a fully populated Lovelace HVAC dashboard from your live zone configuration. No manual editing required; re-run whenever zones are added or removed.
 
-See **[DASHBOARD.md](DASHBOARD.md)** for full setup instructions.
+### Required: deploy the dashboard
 
-The generated dashboard includes a **Rebuild Dashboard** button that regenerates the dashboard in place without a token — one tap from the UI.
+Deploying the generated dashboard isn't optional polish — it's how you set the night mode
+schedule and both setpoint pairs. The setup wizard only asks about zones, thresholds, and
+which existing entities (if any) should drive night mode; the actual setpoint and schedule
+*values* are dashboard-only `number` entities with no other UI (short of Developer Tools →
+States, which is unpleasant for everyday use). Right after adding the integration:
+
+1. Follow **[DASHBOARD.md](DASHBOARD.md)** — pick **Option A** (copy-paste into the Raw
+   Config Editor, no SSH needed) if you don't have host access, or **Option B** (SSH
+   deploy) if you do.
+2. Confirm the **Night Mode** card shows the toggle plus all four numbers (AC/Heat
+   setpoint, Start/End hour) with sensible values before relying on night mode.
+
+The generated dashboard includes a **Rebuild Dashboard** button that regenerates the dashboard in place without a token — one tap from the UI, for whenever zones change later.
 
 ## Zones with compound fan logic (e.g. garage)
 

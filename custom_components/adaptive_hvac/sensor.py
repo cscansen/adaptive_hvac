@@ -1,7 +1,7 @@
 """Sensors for Adaptive HVAC."""
 
 import logging
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -9,6 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, ENTRY_TYPE_SYSTEM, ENTRY_TYPE_ZONE
 from .coordinator import ZoneCoordinator, SystemCoordinator
+from .logic import aqi_category
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ async def async_setup_entry(
             SystemStatusSensor(coordinator),
             SystemModeSensor(coordinator),
             SeasonSensor(coordinator),
+            AirQualitySensor(coordinator),
         ])
     elif entry_type == ENTRY_TYPE_ZONE:
         zone_name = entry.data.get("zone_name", "Zone")
@@ -101,6 +103,36 @@ class SeasonSensor(CoordinatorEntity, SensorEntity):
         if decision:
             return decision.season
         return self.coordinator.determine_calendar_season()
+
+
+class AirQualitySensor(CoordinatorEntity, SensorEntity):
+    """Outdoor US AQI as the HVAC decision engine sees it.
+
+    Mirrors the configured source sensor rather than replacing it, so the dashboard
+    shows the same number the window recommendation is actually gating on.
+    """
+
+    _attr_device_class = SensorDeviceClass.AQI
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.name}_air_quality"
+        self._attr_name = "Adaptive HVAC Air Quality"
+
+    @property
+    def native_value(self):
+        return self.coordinator.last_aqi
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        aqi = self.coordinator.last_aqi
+        return {
+            "category": aqi_category(aqi),
+            "aqi_ok": self.coordinator._aqi_ok(aqi),
+            "threshold": self.coordinator.aqi_threshold(),
+            "source_entity": self.coordinator.system_config.get("aqi_sensor", ""),
+        }
 
 
 class ZoneStatusSensor(CoordinatorEntity, SensorEntity):

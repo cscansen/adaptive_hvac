@@ -25,7 +25,17 @@ from logic import (
     decide_zone,
     decide_system,
     annotate_zone_decisions,
+    aqi_category,
+    windows_are_recommended,
     _floor_fan_mode,
+    REASON_WINDOW_OPEN,
+    REASON_OUTDOOR_COLD,
+    REASON_OPEN_WINDOWS_BETTER,
+    REASON_AQI_HOLD,
+    REASON_WINDOW_OPEN_HEAT,
+    REASON_OUTDOOR_WARM,
+    REASON_OPEN_WINDOWS_WARM,
+    REASON_AQI_HOLD_HEAT,
 )
 
 
@@ -57,7 +67,16 @@ def zone(
     )
 
 
-def sys_state(zones, outdoor=75.0, season="summer", sleep=False, occupied=True, windows_openable=True):
+def sys_state(
+    zones,
+    outdoor=75.0,
+    season="summer",
+    sleep=False,
+    occupied=True,
+    windows_openable=True,
+    aqi=None,
+    aqi_ok=True,
+):
     return SystemState(
         zone_states=zones,
         outdoor_temp=outdoor,
@@ -65,6 +84,8 @@ def sys_state(zones, outdoor=75.0, season="summer", sleep=False, occupied=True, 
         sleep_posture=sleep,
         house_occupied=occupied,
         windows_openable=windows_openable,
+        outdoor_aqi=aqi,
+        aqi_ok=aqi_ok,
     )
 
 
@@ -85,8 +106,12 @@ def sys_cfg(
     heat_exterior_threshold=60.0,
     cool_interior_override_delta=5.0,
     fan_circulation_delta=2.0,
+    window_min_outdoor=60.0,
+    window_max_outdoor=75.0,
 ):
     return SystemConfig(
+        window_min_outdoor=window_min_outdoor,
+        window_max_outdoor=window_max_outdoor,
         ac_setpoint=ac_setpoint,
         heat_setpoint=heat_setpoint,
         heat_threshold=heat_threshold,
@@ -567,3 +592,229 @@ class TestAnnotateZoneDecisions:
         sys_dec = SystemDecision(thermostat_hvac_mode="off")
         annotated = annotate_zone_decisions([z_decision], sys_dec)
         assert annotated[0].mode == "idle_cold"
+
+
+# ---------------------------------------------------------------------------
+# Air quality: AQI never unblocks the HVAC — it only changes the advice.
+# ---------------------------------------------------------------------------
+
+class TestAirQualityGating:
+
+    def _cool_request(self, outdoor, **ss_kw):
+        z = zone(temp=74.0, target=72.0)
+        ss = sys_state([z], outdoor=outdoor, season="summer", **ss_kw)
+        zd = [decide_zone(z, ss, zone_cfg(), sys_cfg())]
+        return ss, zd
+
+    def test_relative_gate_still_blocks_ac_when_aqi_bad(self):
+        """REGRESSION GUARD for an explicit product decision: smoke does NOT buy you AC.
+        Cooler outside still blocks cooling; only the reason code and message change."""
+        ss, zd = self._cool_request(68.0, aqi=152.0, aqi_ok=False)
+        decision = decide_system(ss, zd, sys_cfg())
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.cooling_blocked is True
+        assert decision.blocked_reason == REASON_AQI_HOLD
+        assert "keep windows shut" in " ".join(decision.reasoning)
+
+    def test_relative_gate_reason_code_when_aqi_good(self):
+        ss, zd = self._cool_request(68.0, aqi=20.0, aqi_ok=True)
+        decision = decide_system(ss, zd, sys_cfg())
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.blocked_reason == REASON_OPEN_WINDOWS_BETTER
+        assert "open windows" in " ".join(decision.reasoning)
+
+    def test_aqi_hold_message_survives_unknown_aqi_value(self):
+        """aqi_ok False with no numeric reading must not crash the f-string."""
+        ss, zd = self._cool_request(68.0, aqi=None, aqi_ok=False)
+        decision = decide_system(ss, zd, sys_cfg())
+        assert decision.blocked_reason == REASON_AQI_HOLD
+        assert "AQI unknown" in " ".join(decision.reasoning)
+
+    def test_window_open_reason_code_summer(self):
+        z = zone(temp=74.0, target=72.0, window_open=True)
+        ss = sys_state([z], outdoor=80.0, season="summer")
+        zd = [decide_zone(z, ss, zone_cfg(), sys_cfg())]
+        decision = decide_system(ss, zd, sys_cfg())
+        assert decision.blocked_reason == REASON_WINDOW_OPEN
+        assert decision.cooling_blocked is True
+        assert decision.heating_blocked is False
+
+    def test_outdoor_cold_reason_code(self):
+        """Below the exterior threshold, no interior override, windows not openable
+        so the relative gate can't claim it."""
+        z = zone(temp=73.0, target=72.0)
+        ss = sys_state([z], outdoor=50.0, season="summer", windows_openable=False)
+        zd = [decide_zone(z, ss, zone_cfg(), sys_cfg())]
+        decision = decide_system(ss, zd, sys_cfg())
+        assert decision.blocked_reason == REASON_OUTDOOR_COLD
+        assert decision.cooling_blocked is True
+
+    def test_aqi_category_breakpoints(self):
+        assert aqi_category(0) == "Good"
+        assert aqi_category(50) == "Good"
+        assert aqi_category(51) == "Moderate"
+        assert aqi_category(100) == "Moderate"
+        assert aqi_category(101) == "Unhealthy for Sensitive Groups"
+        assert aqi_category(150) == "Unhealthy for Sensitive Groups"
+        assert aqi_category(151) == "Unhealthy"
+        assert aqi_category(200) == "Unhealthy"
+        assert aqi_category(201) == "Very Unhealthy"
+        assert aqi_category(300) == "Very Unhealthy"
+        assert aqi_category(301) == "Hazardous"
+        assert aqi_category(None) == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# Windows recommendation — absolute band, deliberately season-independent
+# ---------------------------------------------------------------------------
+
+class TestWindowsRecommended:
+
+    def test_recommended_in_band_clean_and_calm(self):
+        ss = sys_state([zone(temp=74.0)], outdoor=64.0, aqi=22.0, aqi_ok=True)
+        assert windows_are_recommended(ss, sys_cfg()) is True
+
+    def test_recommended_in_october_shoulder_season(self):
+        """REGRESSION GUARD for the deliberate choice to make the band season-independent.
+        The calendar season model is binary, so October reads as 'winter' and the furnace
+        wants to run at 62°F — but 62°F is exactly when you open the windows.
+        A future 'optimization' back to a target-relative rule breaks here, loudly."""
+        z = zone(temp=66.0, target=68.0)
+        ss = sys_state([z], outdoor=62.0, season="winter", aqi=18.0, aqi_ok=True)
+        assert windows_are_recommended(ss, sys_cfg()) is True
+
+    def test_not_recommended_when_aqi_bad(self):
+        ss = sys_state([zone()], outdoor=64.0, aqi=160.0, aqi_ok=False)
+        assert windows_are_recommended(ss, sys_cfg()) is False
+
+    def test_not_recommended_when_aqi_unknown(self):
+        """Fail closed — a dead AQI sensor must never produce 'open your windows'."""
+        ss = sys_state([zone()], outdoor=64.0, aqi=None, aqi_ok=False)
+        assert windows_are_recommended(ss, sys_cfg()) is False
+
+    def test_not_recommended_in_rain_or_wind(self):
+        ss = sys_state([zone()], outdoor=64.0, aqi=22.0, aqi_ok=True, windows_openable=False)
+        assert windows_are_recommended(ss, sys_cfg()) is False
+
+    def test_not_recommended_below_band(self):
+        ss = sys_state([zone()], outdoor=55.0, aqi=22.0, aqi_ok=True)
+        assert windows_are_recommended(ss, sys_cfg()) is False
+
+    def test_not_recommended_above_band(self):
+        ss = sys_state([zone()], outdoor=82.0, aqi=22.0, aqi_ok=True)
+        assert windows_are_recommended(ss, sys_cfg()) is False
+
+    def test_band_edges_are_inclusive(self):
+        cfg = sys_cfg()
+        for edge in (60.0, 75.0):
+            ss = sys_state([zone()], outdoor=edge, aqi=10.0, aqi_ok=True)
+            assert windows_are_recommended(ss, cfg) is True
+
+    def test_stamped_onto_every_decision_path(self):
+        """decide_system wraps _decide_system so the advisory lands even on
+        early-return paths like manual override."""
+        z = zone(temp=74.0)
+        ss = sys_state([z], outdoor=64.0, aqi=20.0, aqi_ok=True)
+        ss.manual_override = True
+        decision = decide_system(ss, [], sys_cfg())
+        assert decision.status == "SYSTEM: MANUAL OVERRIDE"
+        assert decision.windows_recommended is True
+
+
+# ---------------------------------------------------------------------------
+# Winter gating — previously untested; the window gate is a behavior change.
+# ---------------------------------------------------------------------------
+
+class TestWinterGating:
+
+    def _heat_request(self, outdoor, zones=None, **ss_kw):
+        zones = zones or [zone(temp=62.0, target=68.0)]
+        cfg = sys_cfg(heat_threshold=68.0, heat_exterior_threshold=60.0)
+        ss = sys_state(zones, outdoor=outdoor, season="winter", **ss_kw)
+        zd = [decide_zone(z, ss, zone_cfg(target=z.zone_target_temp), cfg) for z in zones]
+        return ss, zd, cfg
+
+    def test_window_open_blocks_heat(self):
+        """NEW BEHAVIOR: an open window now shuts the furnace off, as originally intended."""
+        ss, zd, cfg = self._heat_request(40.0, zones=[zone(temp=62.0, target=68.0, window_open=True)])
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.heating_blocked is True
+        assert decision.cooling_blocked is False
+        assert decision.blocked_reason == REASON_WINDOW_OPEN_HEAT
+        assert "Heat BLOCKED: window open" in " ".join(decision.reasoning)
+
+    def test_emergency_heat_bypasses_window_gate(self):
+        """Safety guarantee for the change above — a stuck-open sensor can't freeze the house."""
+        ss, zd, cfg = self._heat_request(20.0, zones=[zone(temp=40.0, target=68.0, window_open=True)])
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "heat"
+        assert decision.heating_blocked is False
+
+    def test_garage_window_does_not_block_heat(self):
+        """affects_thermostat=False zones stay excluded, mirroring the summer fix."""
+        zones = [
+            zone(name="Garage", temp=62.0, target=68.0, window_open=True, affects_thermostat=False),
+            zone(name="Office", temp=62.0, target=68.0),
+        ]
+        ss, zd, cfg = self._heat_request(40.0, zones=zones)
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "heat"
+
+    def test_relative_gate_blocks_heat_when_warmer_outside(self):
+        zones = [zone(name="A", temp=62.0, target=68.0), zone(name="B", temp=64.0, target=70.0)]
+        # Exterior threshold raised out of the way so the relative gate is what fires,
+        # not the pre-existing outdoor > heat_exterior_threshold block.
+        cfg = sys_cfg(heat_threshold=75.0, heat_exterior_threshold=80.0)
+        ss = sys_state(zones, outdoor=72.0, season="winter", aqi=15.0, aqi_ok=True)
+        zd = [decide_zone(z, ss, zone_cfg(target=z.zone_target_temp), cfg) for z in zones]
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.heating_blocked is True
+        assert decision.blocked_reason == REASON_OPEN_WINDOWS_WARM
+        assert "warmer outside, open windows" in " ".join(decision.reasoning)
+
+    def test_relative_gate_uses_max_target_not_min(self):
+        """Outdoor 69°F with targets {66, 70}: the 70°F zone is still cold, so heat must
+        be ALLOWED. Guards max() vs min() — min() here would leave that zone cold."""
+        zones = [zone(name="A", temp=64.0, target=66.0), zone(name="B", temp=64.0, target=70.0)]
+        cfg = sys_cfg(heat_threshold=75.0, heat_exterior_threshold=80.0)
+        ss = sys_state(zones, outdoor=69.0, season="winter", aqi=15.0, aqi_ok=True)
+        zd = [decide_zone(z, ss, zone_cfg(target=z.zone_target_temp), cfg) for z in zones]
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "heat"
+
+    def test_relative_gate_allows_heat_when_windows_not_openable(self):
+        zones = [zone(name="A", temp=62.0, target=68.0)]
+        cfg = sys_cfg(heat_threshold=75.0, heat_exterior_threshold=80.0)
+        ss = sys_state(zones, outdoor=72.0, season="winter", windows_openable=False)
+        zd = [decide_zone(z, ss, zone_cfg(target=68.0), cfg) for z in zones]
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "heat"
+        assert "conditions poor (rain/wind) — heat allowed" in " ".join(decision.reasoning)
+
+    def test_relative_gate_reason_when_aqi_bad(self):
+        """Winter mirror of the summer rule: still blocked, different advice."""
+        zones = [zone(name="A", temp=62.0, target=68.0)]
+        cfg = sys_cfg(heat_threshold=75.0, heat_exterior_threshold=80.0)
+        ss = sys_state(zones, outdoor=72.0, season="winter", aqi=180.0, aqi_ok=False)
+        zd = [decide_zone(z, ss, zone_cfg(target=68.0), cfg) for z in zones]
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.heating_blocked is True
+        assert decision.blocked_reason == REASON_AQI_HOLD_HEAT
+
+    def test_outdoor_warm_sets_heating_blocked(self):
+        """The pre-existing 'Heat BLOCKED: outdoor > threshold' path now raises the flag."""
+        ss, zd, cfg = self._heat_request(70.0)
+        decision = decide_system(ss, zd, cfg)
+        assert decision.thermostat_hvac_mode == "off"
+        assert decision.heating_blocked is True
+        assert decision.blocked_reason == REASON_OUTDOOR_WARM
+
+    def test_no_heat_demand_leaves_heating_blocked_false(self):
+        """A warm winter day with no zone asking for heat is not a 'blocked' state."""
+        ss, zd, cfg = self._heat_request(70.0, zones=[zone(temp=70.0, target=68.0)])
+        decision = decide_system(ss, zd, cfg)
+        assert decision.heating_blocked is False
+        assert decision.blocked_reason == ""

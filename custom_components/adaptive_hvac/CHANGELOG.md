@@ -4,6 +4,79 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.0] - 2026-08-03
+
+### Added
+- **Outdoor air quality gates the "open the windows" advice.** New optional
+  `aqi_sensor` config field (Settings → Reconfigure, step 1). On the live install it
+  points at `sensor.outdoor_aqi`, backed by a keyless Open-Meteo REST sensor added to
+  `configuration.yaml`. Exposed as `sensor.adaptive_hvac_air_quality` (device_class
+  `aqi`) with `category` / `aqi_ok` / `threshold` / `source_entity` attributes, and
+  tuned live via `number.adaptive_hvac_aqi_threshold` (default 50 = EPA "Good").
+  **AQI never unblocks the AC or the furnace** — if it is cooler outside than your
+  targets, cooling stays off exactly as before. Bad air only changes the reason code
+  and the message, so the system stops telling you to let smoke into the house.
+- **`binary_sensor.adaptive_hvac_windows_recommended`** — advisory "fresh air beats
+  the HVAC right now" signal. Deliberately an *absolute* 60-75°F band
+  (`number.adaptive_hvac_window_min_outdoor` / `_window_max_outdoor`) gated on rain,
+  wind and AQI, and deliberately **independent of season and of zone targets**: the
+  season model is binary and calendar-driven, so a target-relative rule would refuse
+  to suggest windows on a 62°F October afternoon — exactly the shoulder-season case
+  it exists for. Never gates the thermostat.
+- **`binary_sensor.adaptive_hvac_heating_blocked`** — the winter mirror of
+  `cooling_blocked`, which never existed. The `"Heat BLOCKED"` reasoning line has been
+  emitted since 0.3.x but set no flag and notified nobody.
+- **Winter relative gate** — heat is withheld when outdoor air is warmer than the
+  *warmest* zone still requesting it (`max()`, not `min()`, so a cooler room is never
+  left cold by a warmer one's satisfaction). Mirrors the summer gate.
+- **Structured `blocked_reason` attribute** on both blocked sensors, replacing
+  string-matching on free text: `window_open`, `outdoor_cold`, `open_windows_better`,
+  `aqi_hold` (summer) and `window_open_heat`, `outdoor_warm`, `open_windows_warm`,
+  `aqi_hold_heat` (winter). Surfaced only on whichever sensor is actually blocked.
+- **`number.adaptive_hvac_heat_exterior_threshold`** — previously config-flow only.
+  Promoted because it doubles as a ceiling on the new winter relative gate: while it
+  sits below every zone target it always fires first, leaving the relative gate
+  unreachable. On the live install it is 60°F against targets of 68-70°F, so the
+  winter relative gate is currently inert by configuration, not by defect.
+- 24 new unit tests (68 total), including named regression guards for the two
+  deliberate design decisions above: AQI must not unblock the AC, and the windows
+  band must stay season-independent.
+
+### Changed
+- **An open window now blocks heat, not just cooling.** The window-open gate was
+  wrapped in `if season == "summer"`, so the furnace happily fought an open window all
+  winter — contrary to the original brief ("a 50 degree winter day, we might air the
+  house out"). Emergency heat still returns *before* this gate, so a stuck-open sensor
+  cannot freeze the house.
+- `decide_system` is now a thin wrapper around `_decide_system` so the advisory
+  windows recommendation lands on every return path, including early ones.
+- Notifications rewritten to branch on `blocked_reason` via `choose:` instead of
+  dumping the raw reasoning string. New automations: `hvac_heating_blocked_notify`,
+  `hvac_windows_recommended_notify` (rate-limited to once per 2h), and
+  `hvac_notification_action_handler` backing a "Run HVAC anyway" button on the
+  smoke-hold alerts.
+
+### Known trade-off
+- Cool **and** smoky means AC blocked (cooler outside) *and* windows not advised. The
+  house coasts until the 85°F emergency-cool threshold or you intervene; winter has
+  the mirror-image hold at 55°F. Both smoke-hold notifications are time-sensitive and
+  carry a one-tap manual-override action so the state is never silent.
+
+## [0.3.34] - 2026-07-26
+
+### Changed
+- **Night mode schedule moved from config_flow to live `number` entities** —
+  `night_start_hour`/`night_end_hour` are no longer part of the integration's setup
+  wizard or reconfigure flow. They're now `number.adaptive_hvac_night_start_hour` /
+  `number.adaptive_hvac_night_end_hour`, mirroring how `night_ac_setpoint`/
+  `night_heat_setpoint` already worked: live-adjustable from the dashboard, no
+  restart required. This fixes a split-authority problem where the night setpoints
+  were dashboard-controlled but the schedule that gates them was buried in
+  Settings → Devices & Services → Reconfigure. Existing `options`-stored values
+  carry over automatically. Since the setup wizard no longer asks about the
+  schedule, deploying the generated dashboard is now a required step, not optional
+  polish — see the README's "Required: deploy the dashboard" section.
+
 ## [0.3.33] - 2026-07-26
 
 ### Removed

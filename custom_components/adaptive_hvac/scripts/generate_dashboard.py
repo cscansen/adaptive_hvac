@@ -387,6 +387,8 @@ def night_mode_card() -> dict:
             {"entity": "switch.adaptive_hvac_night_mode", "name": "Night Mode Active"},
             {"entity": "number.adaptive_hvac_night_ac_setpoint", "name": "Night AC Setpoint"},
             {"entity": "number.adaptive_hvac_night_heat_setpoint", "name": "Night Heat Setpoint"},
+            {"entity": "number.adaptive_hvac_night_start_hour", "name": "Night Start Hour"},
+            {"entity": "number.adaptive_hvac_night_end_hour", "name": "Night End Hour"},
         ],
     }
 
@@ -402,8 +404,32 @@ def setpoints_card() -> dict:
             {"entity": "number.adaptive_hvac_cool_exterior_threshold", "name": "AC Exterior Gate"},
             {"entity": "number.adaptive_hvac_heat_setpoint", "name": "Heat Setpoint"},
             {"entity": "number.adaptive_hvac_heat_threshold", "name": "Heat Trigger"},
+            {"entity": "number.adaptive_hvac_heat_exterior_threshold", "name": "Heat Exterior Gate"},
             {"entity": "number.adaptive_hvac_emergency_cool_threshold", "name": "Emergency Cool"},
             {"entity": "number.adaptive_hvac_emergency_heat_threshold", "name": "Emergency Heat"},
+        ],
+    }
+
+
+def air_and_windows_card() -> dict:
+    """Air quality plus the advisory 'should I just open the windows' signal.
+
+    The band sliders are the seasonal-feel knobs — keep them next to the signal they
+    drive so it's obvious why the recommendation is on or off.
+    """
+    return {
+        "type": "entities",
+        "title": "Air & Windows",
+        "entities": [
+            {"entity": "sensor.adaptive_hvac_air_quality", "name": "Outdoor AQI"},
+            {"entity": "binary_sensor.adaptive_hvac_windows_recommended", "name": "Open the Windows?"},
+            {"type": "section", "label": "Blocked states"},
+            {"entity": "binary_sensor.adaptive_hvac_cooling_blocked", "name": "Cooling Blocked"},
+            {"entity": "binary_sensor.adaptive_hvac_heating_blocked", "name": "Heating Blocked"},
+            {"type": "section", "label": "Tuning"},
+            {"entity": "number.adaptive_hvac_aqi_threshold", "name": "AQI Ceiling"},
+            {"entity": "number.adaptive_hvac_window_min_outdoor", "name": "Band Min"},
+            {"entity": "number.adaptive_hvac_window_max_outdoor", "name": "Band Max"},
         ],
     }
 
@@ -451,6 +477,7 @@ def build_dashboard(zones: list[dict], sys_cfg: dict) -> dict:
         history_graph_card(thermostat, zones),
         controls_card(),
         setpoints_card(),
+        air_and_windows_card(),
         night_mode_card(),
         logbook_card(thermostat),
         force_evaluate_button(),

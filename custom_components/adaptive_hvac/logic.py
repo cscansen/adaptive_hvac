@@ -11,6 +11,39 @@ def _round_half_up(value: float) -> float:
     return math.floor(value + 0.5)
 
 
+# Structured blocked-reason codes. Defined here rather than in const.py because this
+# module is deliberately import-free (const.py re-exports them for the entity modules).
+REASON_WINDOW_OPEN = "window_open"                  # summer: AC off, window open
+REASON_OUTDOOR_COLD = "outdoor_cold"                # summer: below cool_exterior_threshold
+REASON_OPEN_WINDOWS_BETTER = "open_windows_better"  # summer: cooler outside, air is clean
+REASON_AQI_HOLD = "aqi_hold"                        # summer: cooler outside but smoky
+
+REASON_WINDOW_OPEN_HEAT = "window_open_heat"        # winter: furnace off, window open
+REASON_OUTDOOR_WARM = "outdoor_warm"                # winter: above heat_exterior_threshold
+REASON_OPEN_WINDOWS_WARM = "open_windows_warm"      # winter: warmer outside, air is clean
+REASON_AQI_HOLD_HEAT = "aqi_hold_heat"              # winter: warmer outside but smoky
+
+
+# US EPA AQI breakpoints — (upper bound inclusive, label)
+_AQI_BANDS = [
+    (50, "Good"),
+    (100, "Moderate"),
+    (150, "Unhealthy for Sensitive Groups"),
+    (200, "Unhealthy"),
+    (300, "Very Unhealthy"),
+]
+
+
+def aqi_category(value: Optional[float]) -> str:
+    """Map a US AQI number onto its EPA category label."""
+    if value is None:
+        return "Unknown"
+    for upper, label in _AQI_BANDS:
+        if value <= upper:
+            return label
+    return "Hazardous"
+
+
 @dataclass
 class ZoneState:
     """Current state of a single zone."""
@@ -38,6 +71,10 @@ class SystemState:
     windows_openable: bool = True        # False when rain or high wind makes opening impractical
     manual_override: bool = False
     system_active: bool = True
+    outdoor_aqi: Optional[float] = None  # US AQI, None when unavailable
+    # Computed by the coordinator (fail-closed: unknown AQI is not "ok"). Never unblocks
+    # the HVAC — it only decides whether "open the windows instead" is honest advice.
+    aqi_ok: bool = True
 
 
 @dataclass
@@ -63,6 +100,12 @@ class SystemDecision:
     reasoning: list[str] = field(default_factory=list)
     # True when zones demand cooling but all gating paths block it
     cooling_blocked: bool = False
+    # Winter mirror of the above
+    heating_blocked: bool = False
+    # Machine-readable companion to the "AC BLOCKED"/"Heat BLOCKED" reasoning line
+    blocked_reason: str = ""
+    # Advisory only — never gates the thermostat. See windows_are_recommended().
+    windows_recommended: bool = False
 
 
 @dataclass
@@ -91,6 +134,26 @@ class SystemConfig:
     upstairs_demand_boost: float = 0.0
     # Floor circulation: run thermostat fan when any two floors differ by this many °F
     fan_circulation_delta: float = 2.0
+    # Absolute band in which opening the windows is worth recommending (°F)
+    window_min_outdoor: float = 60.0
+    window_max_outdoor: float = 75.0
+
+
+def windows_are_recommended(sys_state: SystemState, cfg: SystemConfig) -> bool:
+    """Green light to open up: outdoor air is in the comfortable band, no rain or high
+    wind, and clean air.
+
+    Deliberately independent of season and of the zone targets. The season model is
+    binary and calendar-driven (October reads as "winter"), so a target-relative rule
+    would refuse to suggest windows on a 62°F October afternoon — precisely the
+    shoulder-season case this is for. Fresh air is the goal; the band decides, not the
+    thermostat. Unknown AQI counts as not-green.
+
+    Advisory only: this never gates the thermostat.
+    """
+    if not sys_state.windows_openable or not sys_state.aqi_ok:
+        return False
+    return cfg.window_min_outdoor <= sys_state.outdoor_temp <= cfg.window_max_outdoor
 
 
 def decide_zone(
@@ -213,6 +276,21 @@ def decide_system(
     zone_decisions: list[ZoneDecision],
     cfg: SystemConfig,
 ) -> SystemDecision:
+    """Aggregate zone decisions into a system thermostat command, then stamp the
+    advisory windows recommendation onto whichever decision came back.
+
+    The recommendation is computed here rather than inside _decide_system so it lands
+    on every return path — it is independent of the gating outcome by design.
+    """
+    decision = _decide_system(sys_state, zone_decisions, cfg)
+    return replace(decision, windows_recommended=windows_are_recommended(sys_state, cfg))
+
+
+def _decide_system(
+    sys_state: SystemState,
+    zone_decisions: list[ZoneDecision],
+    cfg: SystemConfig,
+) -> SystemDecision:
     """
     Aggregate zone decisions into a system thermostat command.
 
@@ -283,21 +361,28 @@ def decide_system(
             reasoning=reasoning,
         )
 
-    # Window open gate — block cooling if any zone reports a window open
-    if season == "summer":
-        open_zones = [z.zone_name for z in sys_state.zone_states if z.window_open and z.affects_thermostat]
-        if open_zones:
-            zone_list = ", ".join(open_zones)
-            reasoning.append(f"AC BLOCKED: window open in {zone_list}")
-            off_fan_mode, off_fan_reasoning = _summer_off_fan_mode()
-            return SystemDecision(
-                thermostat_hvac_mode="off",
-                whole_house_fan_mode=off_fan_mode,
-                season=season,
-                status=f"SYSTEM: OFF (window open — {zone_list})",
-                reasoning=reasoning + off_fan_reasoning,
-                cooling_blocked=True,
-            )
+    # Window open gate — an open window means the house is being aired out on purpose,
+    # so neither the AC nor the furnace should fight it. Runs in both seasons; the
+    # emergency returns above still take precedence, so a stuck-open sensor can't
+    # freeze or bake the house.
+    open_zones = [z.zone_name for z in sys_state.zone_states if z.window_open and z.affects_thermostat]
+    if open_zones:
+        zone_list = ", ".join(open_zones)
+        summer = season == "summer"
+        label = "AC" if summer else "Heat"
+        reasoning.append(f"{label} BLOCKED: window open in {zone_list}")
+        # Already season-aware — returns plain fan_mode outside summer.
+        fan_mode_open, fan_reasoning_open = _summer_off_fan_mode()
+        return SystemDecision(
+            thermostat_hvac_mode="off",
+            whole_house_fan_mode=fan_mode_open,
+            season=season,
+            status=f"SYSTEM: OFF (window open — {zone_list})",
+            reasoning=reasoning + fan_reasoning_open,
+            cooling_blocked=summer,
+            heating_blocked=not summer,
+            blocked_reason=REASON_WINDOW_OPEN if summer else REASON_WINDOW_OPEN_HEAT,
+        )
 
     # Collect zone requests
     cooling_zones = [d for d in zone_decisions if d.thermal_request == "cool"]
@@ -305,6 +390,7 @@ def decide_system(
 
     outdoor = sys_state.outdoor_temp
     reasoning.append(f"Outdoor: {outdoor:.1f}°F")
+    blocked_reason = ""
 
     if season == "summer":
         if cooling_zones:
@@ -326,6 +412,7 @@ def decide_system(
                         break
 
                 if not allow_cool:
+                    blocked_reason = REASON_OUTDOOR_COLD
                     reasoning.append(
                         f"AC BLOCKED: outdoor {outdoor:.1f}°F < {cfg.cool_exterior_threshold:.1f}°F "
                         f"and no zone exceeds interior override delta"
@@ -340,11 +427,24 @@ def decide_system(
                     min_target = min(z.zone_target_temp for z in requesting_states)
                     if outdoor < min_target:
                         if sys_state.windows_openable:
+                            # Blocked either way — AQI changes the advice, not the outcome.
                             allow_cool = False
-                            reasoning.append(
-                                f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
-                                f"— cooler outside, open windows"
-                            )
+                            if sys_state.aqi_ok:
+                                blocked_reason = REASON_OPEN_WINDOWS_BETTER
+                                reasoning.append(
+                                    f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
+                                    f"— cooler outside, open windows"
+                                )
+                            else:
+                                blocked_reason = REASON_AQI_HOLD
+                                aqi_txt = (
+                                    f"{sys_state.outdoor_aqi:.0f}"
+                                    if sys_state.outdoor_aqi is not None else "unknown"
+                                )
+                                reasoning.append(
+                                    f"AC BLOCKED: outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
+                                    f"but AQI {aqi_txt} — keep windows shut"
+                                )
                         else:
                             reasoning.append(
                                 f"Outdoor {outdoor:.1f}°F < zone target {min_target:.1f}°F "
@@ -381,13 +481,52 @@ def decide_system(
             reasoning=reasoning + off_fan_reasoning,
             # cooling_blocked when zones were requesting cool but gates prevented it
             cooling_blocked=bool(cooling_zones) and any("AC BLOCKED" in r for r in reasoning),
+            blocked_reason=blocked_reason if cooling_zones else "",
         )
 
     elif season == "winter":
         if heating_zones:
             allow_heat = outdoor <= cfg.heat_exterior_threshold
-            if allow_heat:
+            if not allow_heat:
+                blocked_reason = REASON_OUTDOOR_WARM
+                reasoning.append(f"Heat BLOCKED: outdoor {outdoor:.1f}°F > {cfg.heat_exterior_threshold:.1f}°F")
+            else:
                 reasoning.append(f"Heat allowed: outdoor {outdoor:.1f}°F ≤ {cfg.heat_exterior_threshold:.1f}°F")
+
+                # Relative gate — mirror of the summer one. Uses max() so heat is only
+                # withheld once outdoor air exceeds the *warmest* zone still asking;
+                # a cooler zone must never be left cold by a warmer one's satisfaction.
+                heating_zone_names = {d.zone_name for d in heating_zones}
+                requesting_states = [z for z in sys_state.zone_states if z.zone_name in heating_zone_names]
+                if requesting_states:
+                    max_target = max(z.zone_target_temp for z in requesting_states)
+                    if outdoor > max_target:
+                        if sys_state.windows_openable:
+                            # Blocked either way — AQI changes the advice, not the outcome.
+                            allow_heat = False
+                            if sys_state.aqi_ok:
+                                blocked_reason = REASON_OPEN_WINDOWS_WARM
+                                reasoning.append(
+                                    f"Heat BLOCKED: outdoor {outdoor:.1f}°F > zone target {max_target:.1f}°F "
+                                    f"— warmer outside, open windows"
+                                )
+                            else:
+                                blocked_reason = REASON_AQI_HOLD_HEAT
+                                aqi_txt = (
+                                    f"{sys_state.outdoor_aqi:.0f}"
+                                    if sys_state.outdoor_aqi is not None else "unknown"
+                                )
+                                reasoning.append(
+                                    f"Heat BLOCKED: outdoor {outdoor:.1f}°F > zone target {max_target:.1f}°F "
+                                    f"but AQI {aqi_txt} — keep windows shut"
+                                )
+                        else:
+                            reasoning.append(
+                                f"Outdoor {outdoor:.1f}°F > zone target {max_target:.1f}°F "
+                                f"but conditions poor (rain/wind) — heat allowed"
+                            )
+
+            if allow_heat:
                 boost = cfg.upstairs_demand_boost if heating_zones else 0.0
                 adjusted_setpoint = _round_half_up(cfg.heat_setpoint + boost)
                 if boost > 0:
@@ -403,8 +542,6 @@ def decide_system(
                     status=f"SYSTEM: HEAT → {adjusted_setpoint:.0f}°F | {zone_statuses}",
                     reasoning=reasoning + fan_reasoning,
                 )
-            else:
-                reasoning.append(f"Heat BLOCKED: outdoor {outdoor:.1f}°F > {cfg.heat_exterior_threshold:.1f}°F")
 
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
         return SystemDecision(
@@ -413,6 +550,9 @@ def decide_system(
             season=season,
             status=f"SYSTEM: OFF (winter, no heating) | {zone_statuses}",
             reasoning=reasoning + fan_reasoning,
+            # heating_blocked when zones were requesting heat but gates prevented it
+            heating_blocked=bool(heating_zones) and any("Heat BLOCKED" in r for r in reasoning),
+            blocked_reason=blocked_reason if heating_zones else "",
         )
 
     # Fallback (shouldn't happen with binary season model)

@@ -94,6 +94,20 @@ CONF_NIGHT_END_HOUR = "night_end_hour"
 # System — Night mode: optional external boolean that also activates night mode when "on"
 CONF_NIGHT_MODE_SOURCE_ENTITY = "night_mode_source_entity"
 
+# System — Air quality
+# AQI never unblocks the HVAC; it decides whether "open the windows instead" is honest advice.
+CONF_AQI_SENSOR = "aqi_sensor"
+CONF_AQI_MAX_FOR_WINDOWS = "aqi_max_for_windows"
+DEFAULT_AQI_MAX_FOR_WINDOWS = 50.0   # US AQI "Good" ceiling
+
+# System — Windows recommendation band (absolute °F, deliberately season-independent).
+# A 62°F October afternoon is worth opening up for even though the calendar season is
+# "winter" and the furnace would otherwise want to run — see windows_are_recommended().
+CONF_WINDOW_MIN_OUTDOOR = "window_min_outdoor_temp"
+DEFAULT_WINDOW_MIN_OUTDOOR = 60.0
+CONF_WINDOW_MAX_OUTDOOR = "window_max_outdoor_temp"
+DEFAULT_WINDOW_MAX_OUTDOOR = 75.0
+
 # ===== DEFAULTS (ZONE) =====
 
 # Zone — Target temp (single threshold: fan on above this, fan off at/below)
@@ -158,6 +172,22 @@ ATTR_MODE = "mode"
 ATTR_SEASON = "season"
 ATTR_THERMAL_REQUEST = "thermal_request"
 ATTR_REASONING = "reasoning"
+
+ATTR_BLOCKED_REASON = "blocked_reason"
+ATTR_WINDOWS_RECOMMENDED = "windows_recommended"
+
+# Structured blocked-reason codes are defined in logic.py (which stays import-free so it
+# can be unit-tested standalone) and re-exported here alongside the other constants.
+from .logic import (  # noqa: E402
+    REASON_WINDOW_OPEN,
+    REASON_OUTDOOR_COLD,
+    REASON_OPEN_WINDOWS_BETTER,
+    REASON_AQI_HOLD,
+    REASON_WINDOW_OPEN_HEAT,
+    REASON_OUTDOOR_WARM,
+    REASON_OPEN_WINDOWS_WARM,
+    REASON_AQI_HOLD_HEAT,
+)
 
 # Service names
 SERVICE_FORCE_EVALUATE = "force_evaluate"

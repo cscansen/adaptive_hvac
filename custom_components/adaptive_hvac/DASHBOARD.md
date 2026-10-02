@@ -74,7 +74,12 @@ configuration is required. For each configured zone it creates:
 
 The system section includes season, mode, setpoint, thermostat temperature,
 outdoor temperature, humidity, controls, setpoint sliders, a night mode card
-(toggle + night setpoint sliders), and a history graph.
+(toggle, night setpoint sliders, and night start/end hour sliders), and a
+history graph.
+
+> The night mode schedule (start/end hour) is configured **only** through
+> this dashboard card — it is not part of the integration's setup wizard.
+> See the README's "Required: deploy the dashboard" section.
 
 ## Running directly on the HA host (no token required)
 

@@ -16,7 +16,6 @@ from .const import (
     DEFAULT_HEAT_EXTERIOR_THRESHOLD,
     DEFAULT_WINTER_START_MONTH, DEFAULT_WINTER_END_MONTH,
     DEFAULT_ZONE_TARGET_TEMP, DEFAULT_FAN_SPEED,
-    DEFAULT_NIGHT_START_HOUR, DEFAULT_NIGHT_END_HOUR,
 )
 
 
@@ -103,6 +102,9 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional("weather_entity", default=""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
+                vol.Optional("aqi_sensor", default=""): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
             }),
             description_placeholders={"step_title": "Step 1/4: Thermostat & Weather"},
         )
@@ -182,12 +184,6 @@ class AdaptiveHVACConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Optional("winter_start_month", default=str(DEFAULT_WINTER_START_MONTH)): _month_selector(DEFAULT_WINTER_START_MONTH),
                 vol.Optional("winter_end_month", default=str(DEFAULT_WINTER_END_MONTH)): _month_selector(DEFAULT_WINTER_END_MONTH),
-                vol.Optional("night_start_hour", default=DEFAULT_NIGHT_START_HOUR): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=23, step=1)
-                ),
-                vol.Optional("night_end_hour", default=DEFAULT_NIGHT_END_HOUR): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=23, step=1)
-                ),
                 vol.Optional("night_mode_source_entity", default=""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["input_boolean", "binary_sensor"])
                 ),
@@ -252,6 +248,9 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("weather_entity", default=d.get("weather_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
+                vol.Optional("aqi_sensor", default=d.get("aqi_sensor", "")): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
                 vol.Optional("sleep_posture_entity", default=d.get("sleep_posture_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="input_boolean")
                 ),
@@ -286,12 +285,6 @@ class SystemOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional("winter_start_month", default=str(d.get("winter_start_month", DEFAULT_WINTER_START_MONTH))): _month_selector(DEFAULT_WINTER_START_MONTH),
                 vol.Optional("winter_end_month", default=str(d.get("winter_end_month", DEFAULT_WINTER_END_MONTH))): _month_selector(DEFAULT_WINTER_END_MONTH),
-                vol.Optional("night_start_hour", default=d.get("night_start_hour", DEFAULT_NIGHT_START_HOUR)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=23, step=1)
-                ),
-                vol.Optional("night_end_hour", default=d.get("night_end_hour", DEFAULT_NIGHT_END_HOUR)): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=23, step=1)
-                ),
                 vol.Optional("night_mode_source_entity", default=d.get("night_mode_source_entity", "")): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["input_boolean", "binary_sensor"])
                 ),

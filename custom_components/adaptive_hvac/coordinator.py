@@ -36,6 +36,9 @@ from .const import (
     DEFAULT_NIGHT_HEAT_SETPOINT,
     DEFAULT_NIGHT_START_HOUR,
     DEFAULT_NIGHT_END_HOUR,
+    DEFAULT_AQI_MAX_FOR_WINDOWS,
+    DEFAULT_WINDOW_MIN_OUTDOOR,
+    DEFAULT_WINDOW_MAX_OUTDOOR,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -308,6 +311,7 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._degraded_mode: bool = False
         self._night_mode_manual: bool = False
         self.night_mode_active: bool = False
+        self.last_aqi: Optional[float] = None
 
     def determine_calendar_season(self) -> str:
         """Determine season — respects manual override, otherwise calendar-based."""
@@ -412,6 +416,35 @@ class SystemCoordinator(DataUpdateCoordinator):
             wind = 0.0
         return not rainy and wind < 20
 
+    def _read_aqi(self) -> Optional[float]:
+        """Read outdoor US AQI. None when no sensor is configured or it isn't reporting."""
+        entity = self.system_config.get("aqi_sensor")
+        if not entity:
+            return None
+        state = self.hass.states.get(entity)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            return None
+
+    def aqi_threshold(self) -> float:
+        """Live AQI ceiling for recommending windows (dashboard slider wins)."""
+        return self._effective_setpoint("aqi_max_for_windows", DEFAULT_AQI_MAX_FOR_WINDOWS)
+
+    def _aqi_ok(self, aqi: Optional[float]) -> bool:
+        """Whether the air is clean enough to recommend opening up.
+
+        Fail closed when a sensor *is* configured but isn't reporting — a dead AQI
+        sensor must never produce an 'open your windows' recommendation. With no
+        sensor configured at all there is nothing to fail closed on, so behave as the
+        integration did before air quality existed. Never unblocks the HVAC either way.
+        """
+        if aqi is not None:
+            return aqi <= self.aqi_threshold()
+        return not self.system_config.get("aqi_sensor")
+
     def _read_sleep_posture(self) -> bool:
         """Read sleep posture flag (retained for diagnostics/future use)."""
         entity = self.system_config.get("sleep_posture_entity")
@@ -481,6 +514,11 @@ class SystemCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> SystemDecision:
         """Aggregate zone decisions and produce system thermostat command."""
+        # Read air quality up front — it must stay populated on the early-return paths
+        # below (no zone data / failsafe) so the AQI sensor doesn't blank out whenever
+        # a temp sensor is unavailable.
+        self.last_aqi = self._read_aqi()
+
         # Dynamically discover zone coordinators
         active_zone_coordinators = [
             self.hass.data[DOMAIN][entry.entry_id]
@@ -618,6 +656,8 @@ class SystemCoordinator(DataUpdateCoordinator):
             manual_override=manual_override,
             system_active=system_active,
             windows_openable=windows_openable,
+            outdoor_aqi=self.last_aqi,
+            aqi_ok=self._aqi_ok(self.last_aqi),
         )
 
         self.night_mode_active = self._is_night_mode_active()
@@ -638,6 +678,8 @@ class SystemCoordinator(DataUpdateCoordinator):
             heat_exterior_threshold=float(self.system_config.get("heat_exterior_threshold", DEFAULT_HEAT_EXTERIOR_THRESHOLD)),
             upstairs_demand_boost=self._effective_setpoint("upstairs_demand_boost", DEFAULT_UPSTAIRS_DEMAND_BOOST),
             fan_circulation_delta=self._effective_setpoint("fan_circulation_delta", DEFAULT_FAN_CIRCULATION_DELTA),
+            window_min_outdoor=self._effective_setpoint("window_min_outdoor_temp", DEFAULT_WINDOW_MIN_OUTDOOR),
+            window_max_outdoor=self._effective_setpoint("window_max_outdoor_temp", DEFAULT_WINDOW_MAX_OUTDOOR),
         )
 
         decision = decide_system(sys_state, zone_decisions, cfg)

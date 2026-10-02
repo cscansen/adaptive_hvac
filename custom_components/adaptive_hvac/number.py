@@ -17,11 +17,17 @@ from .const import (
     DEFAULT_EMERGENCY_HEAT_THRESHOLD,
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
+    DEFAULT_HEAT_EXTERIOR_THRESHOLD,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
     DEFAULT_ZONE_TARGET_TEMP,
     DEFAULT_NIGHT_AC_SETPOINT,
     DEFAULT_NIGHT_HEAT_SETPOINT,
+    DEFAULT_NIGHT_START_HOUR,
+    DEFAULT_NIGHT_END_HOUR,
+    DEFAULT_AQI_MAX_FOR_WINDOWS,
+    DEFAULT_WINDOW_MIN_OUTDOOR,
+    DEFAULT_WINDOW_MAX_OUTDOOR,
 )
 from .coordinator import SystemCoordinator, ZoneCoordinator
 
@@ -51,10 +57,16 @@ async def async_setup_entry(
         EmergencyHeatThresholdNumber(coordinator),
         EmergencyCoolThresholdNumber(coordinator),
         CoolExteriorThresholdNumber(coordinator),
+        HeatExteriorThresholdNumber(coordinator),
+        AQIMaxForWindowsNumber(coordinator),
+        WindowMinOutdoorNumber(coordinator),
+        WindowMaxOutdoorNumber(coordinator),
         UpstairsDemandBoostNumber(coordinator),
         FanCirculationDeltaNumber(coordinator),
         NightACSetpointNumber(coordinator),
         NightHeatSetpointNumber(coordinator),
+        NightStartHourNumber(coordinator),
+        NightEndHourNumber(coordinator),
     ])
 
 
@@ -178,6 +190,72 @@ class CoolExteriorThresholdNumber(_BaseSystemNumber):
         self._attr_native_step = 1.0
 
 
+class HeatExteriorThresholdNumber(_BaseSystemNumber):
+    """Maximum outdoor temp for heat to run (above this = heat blocked).
+
+    Exposed as a slider because it also acts as a ceiling on the winter relative gate:
+    while this sits below every zone target, the relative gate can never be reached —
+    this check always fires first. Raise it above your warmest zone target to let
+    "warmer outside, open windows" actually happen.
+    """
+    _config_key = "heat_exterior_threshold"
+    _default = DEFAULT_HEAT_EXTERIOR_THRESHOLD
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_heat_exterior_threshold"
+        self._attr_name = "Adaptive HVAC Heat Exterior Threshold"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 40.0
+        self._attr_native_max_value = 85.0
+        self._attr_native_step = 1.0
+
+
+class AQIMaxForWindowsNumber(_BaseSystemNumber):
+    """Outdoor AQI ceiling above which opening the windows stops being good advice."""
+    _config_key = "aqi_max_for_windows"
+    _default = DEFAULT_AQI_MAX_FOR_WINDOWS
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_aqi_max_for_windows"
+        self._attr_name = "Adaptive HVAC AQI Threshold"
+        self._attr_native_min_value = 25.0
+        self._attr_native_max_value = 200.0
+        self._attr_native_step = 5.0
+
+
+class WindowMinOutdoorNumber(_BaseSystemNumber):
+    """Bottom of the band in which opening the windows is worth recommending."""
+    _config_key = "window_min_outdoor_temp"
+    _default = DEFAULT_WINDOW_MIN_OUTDOOR
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_window_min_outdoor"
+        self._attr_name = "Adaptive HVAC Window Min Outdoor"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 45.0
+        self._attr_native_max_value = 70.0
+        self._attr_native_step = 1.0
+
+
+class WindowMaxOutdoorNumber(_BaseSystemNumber):
+    """Top of the window-recommendation band. Lower this toward the coolest zone
+    target if the recommendation starts fighting the AC on warm afternoons."""
+    _config_key = "window_max_outdoor_temp"
+    _default = DEFAULT_WINDOW_MAX_OUTDOOR
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_window_max_outdoor"
+        self._attr_name = "Adaptive HVAC Window Max Outdoor"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 65.0
+        self._attr_native_max_value = 85.0
+        self._attr_native_step = 1.0
+
+
 class UpstairsDemandBoostNumber(_BaseSystemNumber):
     """Degrees to lower AC setpoint when upstairs zones request cooling."""
     _config_key = "upstairs_demand_boost"
@@ -238,6 +316,38 @@ class NightHeatSetpointNumber(_BaseSystemNumber):
         self._attr_native_max_value = 75.0
         self._attr_native_step = 1.0
         self._attr_icon = "mdi:weather-night"
+
+
+class NightStartHourNumber(_BaseSystemNumber):
+    """Hour (0-23) at which night mode's schedule window begins."""
+    _config_key = "night_start_hour"
+    _default = DEFAULT_NIGHT_START_HOUR
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_night_start_hour"
+        self._attr_name = "Adaptive HVAC Night Start Hour"
+        self._attr_native_unit_of_measurement = "h"
+        self._attr_native_min_value = 0.0
+        self._attr_native_max_value = 23.0
+        self._attr_native_step = 1.0
+        self._attr_icon = "mdi:weather-night"
+
+
+class NightEndHourNumber(_BaseSystemNumber):
+    """Hour (0-23) at which night mode's schedule window ends."""
+    _config_key = "night_end_hour"
+    _default = DEFAULT_NIGHT_END_HOUR
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_night_end_hour"
+        self._attr_name = "Adaptive HVAC Night End Hour"
+        self._attr_native_unit_of_measurement = "h"
+        self._attr_native_min_value = 0.0
+        self._attr_native_max_value = 23.0
+        self._attr_native_step = 1.0
+        self._attr_icon = "mdi:weather-sunset-up"
 
 
 class ZoneTargetTempNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
