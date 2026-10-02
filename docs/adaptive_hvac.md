@@ -1,6 +1,6 @@
 # Adaptive HVAC Integration — Complete Reference
 
-**Version:** v0.3.15  
+**Version:** v0.4.1  
 **Source:** `/custom_components/adaptive_hvac/`  
 **Status:** Deployed, replaces old 13-automation YAML system
 
@@ -50,8 +50,12 @@ Settings → Integrations → Adaptive HVAC → Configure (system entry)
 | Heat threshold | 68°F | Zone temp that triggers a heat request |
 | Emergency heat threshold | 55°F | Bypasses all gating |
 | Cool exterior threshold | 60°F | Min outdoor temp to allow AC (`number.adaptive_hvac_cool_exterior_threshold`) |
-| Heat exterior threshold | 60°F | Max outdoor temp to allow heat |
+| Heat exterior threshold | 60°F | Max outdoor temp to allow heat (`number.adaptive_hvac_heat_exterior_threshold`). Also caps the winter relative gate — see the note under System decision |
 | Cool interior override delta | 5°F | If any zone is this far above its target, bypass exterior gate |
+| AQI sensor | — | Optional `sensor` reporting US AQI. On this install: `sensor.outdoor_aqi` (Open-Meteo REST, keyless, in `configuration.yaml`) |
+| AQI ceiling | 50 | Above this, windows stop being good advice (`number.adaptive_hvac_aqi_threshold`, 25–200) |
+| Window band min | 60°F | Bottom of the windows-recommended band (`number.adaptive_hvac_window_min_outdoor`) |
+| Window band max | 75°F | Top of the same band (`number.adaptive_hvac_window_max_outdoor`) |
 
 ### Zone entry (`zone`)
 
@@ -65,22 +69,25 @@ One per room. Settings → Integrations → Add → Adaptive HVAC
 | Humidity sensor | — | Optional, displayed in status |
 | Fans | — | Entity IDs this zone controls |
 | Fan speed | 50% | Speed when integration turns fan on |
-| Window sensor | — | Open = block AC for this zone only |
+| Window sensor | — | Open = block conditioning (AC **and** heat as of v0.4.0) |
 | Occupancy sensor | — | Off = fans off (thermostat requests unaffected) |
 | Zone target temp | 72°F | Fan turns on above this |
 | Emergency cool threshold | 85°F | Bypass all gating, fan 100% |
 | Affects thermostat | ON | OFF = fans only; zone never sends cooling/heating request to thermostat. Use for garages, workshops, or any space not served by the HVAC duct |
 | Auto-control switch | — | `switch.adaptive_hvac_{zone}_auto` — turns off fan automation |
 
-### Deployed zones (v0.3.15)
+### Deployed zones (v0.4.0)
 
 | Zone | Temp sensor | Fans | Affects thermostat | Auto switch | Fan lock switch |
 |------|-------------|------|--------------------|-------------|-----------------|
 | Caleb's Office | `sensor.caleb_s_office_hygrometer_temperature` | `fan.caleb_office_ceiling` | Yes | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
 | Tia's Office | `sensor.tias_office_hygrometer_temperature` | `fan.tia_office_ceiling_fan` | Yes | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
 | Master Bedroom | `sensor.meter_pro_2689_temperature` | (fans TBD) | Yes | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
-| Garage | `sensor.garage_hygrometer_temperature_2` | `fan.garage_fans` | **No** | `switch.adaptive_hvac_garage_auto` | `switch.adaptive_hvac_garage_fan_locked` |
-| Living Room | — | — | Yes | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
+| Living Room | `sensor.downstairs_thermostat_temperature` | — | Yes | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
+
+The Garage was removed as a zone on 2026-07-26 — it was `affects_thermostat: false` anyway, so this
+changed only fan control. Its compound door-OR-occupancy logic now lives in
+`automation.garage_fans_door_occupancy_cooling`.
 
 Note: `switch.adaptive_hvac_calebs_office_auto` (no `_2`) is an orphaned registry entry — unavailable, safe to delete in Settings → Entities.
 
@@ -121,20 +128,92 @@ Aggregates zone thermal requests, then applies gating:
 **Cooling allowed if ALL of:**
 - No zone window sensor is open (unless emergency)
 - Outdoor temp ≥ cool exterior threshold (60°F default) — OR any zone is ≥ 5°F above its target (interior override)
-- Outdoor temp ≥ the requesting zones' comfort target — if it's cooler outside than the room needs to be, open windows instead
+- Outdoor temp ≥ the **coolest** requesting zone's target — if it's cooler outside than the room needs to be, open windows instead
+
+**Heating allowed if ALL of:**
+- No zone window sensor is open (unless emergency) — *new in v0.4.0; the furnace previously ignored open windows entirely*
+- Outdoor temp ≤ heat exterior threshold (60°F default)
+- Outdoor temp ≤ the **warmest** requesting zone's target — if it's warmer outside than that, open windows instead
+
+`min()` for cooling and `max()` for heating is deliberate: each protects the zone that is still
+unsatisfied, so no room is left uncomfortable because a different room got what it wanted.
+
+> **The winter relative gate can be unreachable.** `heat_exterior_threshold` is evaluated first,
+> so while it sits *below* every zone target the relative gate can never fire — you would need
+> `outdoor ≤ 60` and `outdoor > 68` at once. With this install's 60°F threshold against 68–70°F
+> targets it is inert by configuration, not by defect. Raise
+> `number.adaptive_hvac_heat_exterior_threshold` above the warmest zone target to enable it.
+> Cooling has no such problem: the 60°F cool threshold sits below the 68–70°F targets, leaving a
+> live 60–68°F window where the relative gate fires.
 
 **When cooling runs:** dispatched setpoint = `ac_setpoint − upstairs_demand_boost` (default 1°F reduction, pushes more cold air upstairs through the single duct).
 
 **When heating runs:** dispatched setpoint = `heat_setpoint + upstairs_demand_boost` (same entity, raises target so furnace runs harder/longer, pushing more warm air upstairs).
 
-**Heating allowed if:**
-- Outdoor temp ≤ heat exterior threshold
+### Air quality (v0.4.0)
+
+**AQI never unblocks the HVAC.** If it is cooler outside than the targets, cooling stays off whether
+the air is clean or full of wildfire smoke — the relative gates above are unchanged. Air quality only
+selects which `blocked_reason` and which message the decision carries, so the system stops advising
+you to open the windows during a smoke event.
+
+Fail-closed rule: a *configured* AQI sensor that reads `unavailable` counts as bad air, so a dead
+sensor can never generate an "open your windows" recommendation. With no AQI sensor configured at
+all, behavior is identical to pre-0.4.0.
+
+### Blocked reason codes
+
+Both `binary_sensor.adaptive_hvac_cooling_blocked` and `..._heating_blocked` expose a
+machine-readable `blocked_reason` — surfaced only on whichever sensor is actually blocked — so
+notifications branch per cause rather than string-matching free text.
+
+| Summer | Winter | Meaning |
+|--------|--------|---------|
+| `window_open` | `window_open_heat` | A window is open; the house is being aired out on purpose |
+| `outdoor_cold` | `outdoor_warm` | Past the exterior threshold, no interior override |
+| `open_windows_better` | `open_windows_warm` | Outdoor air would do the job, and it is clean |
+| `aqi_hold` | `aqi_hold_heat` | Outdoor air would do the job, but it is smoky |
+
+**The smoke-hold trade-off:** `aqi_hold` means conditioning is off (better outside) *and* opening up
+is a bad idea. The house coasts until the 85°F emergency-cool threshold — 55°F for the winter
+mirror — or until you intervene. Both smoke-hold notifications are time-sensitive and carry a
+one-tap "Run HVAC anyway" action wired to `switch.adaptive_hvac_manual_override`.
+
+### Windows recommendation — advisory only
+
+`binary_sensor.adaptive_hvac_windows_recommended` never gates the thermostat. It is an **absolute
+60–75°F band** requiring no rain, no high wind, and clean air.
+
+It deliberately ignores season *and* zone targets, which is not the obvious implementation. The
+season model is binary and calendar-driven — all of October reads as "winter" — so a target-relative
+rule would refuse to suggest windows on a 62°F October afternoon because 62 < the 68°F heat target.
+That shoulder-season case is the entire point of the feature.
+`test_windows_recommended_in_october_shoulder_season` guards this against future "simplification".
+
+Known overlap: at 74°F outdoors against a 72°F target, the band still says "open up" while a zone
+wants cooling. Slide `window_max_outdoor` down to 72 rather than adding logic — the two band
+sliders exist to be tuned by feel across the year.
 
 **Emergency:** any zone ≥ emergency cool threshold (83°F default) or ≤ emergency heat threshold (55°F) bypasses all gating.
 
-**Season** — calendar only: Oct–Apr = winter, May–Sep = summer. Override: `select.adaptive_hvac_season_override`.
+**Season** — calendar only: Oct–Apr = winter, May–Sep = summer. Override: `select.adaptive_hvac_season_override`. Note that toggling the override walks the season-transition path and clears setpoint overrides — record `number.adaptive_hvac_ac_setpoint`/`heat_setpoint` before using it for testing.
 
 **Setpoint adoption:** if the user adjusts the setpoint via the **HA UI or app** (`context.user_id` set), the integration adopts the new value as the seasonal setpoint and persists it to config options. Resets on season change. Use `number.adaptive_hvac_ac_setpoint` on the dashboard as the primary adjustment mechanism.
+
+## Notifications
+
+All four are plain HA automations, not integration code, so they can be retuned without a restart.
+Edit via `GET`/`POST /api/config/automation/config/<id>` — send the **full** JSON, partial payloads
+drop fields — then `check_config` and `automation/reload`.
+
+| ID | Trigger | Purpose |
+|----|---------|---------|
+| `hvac_cooling_blocked_notify` | `cooling_blocked` on for 10 min | Branches on `blocked_reason` via `choose:` — four distinct messages |
+| `hvac_heating_blocked_notify` | `heating_blocked` on for 10 min | Winter mirror, four branches |
+| `hvac_windows_recommended_notify` | `windows_recommended` on for 10 min | Shoulder-season fresh-air nudge; suppressed when a window is already open and rate-limited to once per 2h so a band-edge wobble can't nag |
+| `hvac_notification_action_handler` | `mobile_app_notification_action` = `AHVAC_OVERRIDE` | Backs the "Run HVAC anyway" button on the smoke-hold alerts |
+
+All notify via `notify.all_phones` and are gated on `binary_sensor.anyone_home`.
 
 ## Fan Lock System
 
@@ -162,6 +241,15 @@ Physical wall switch presses are detected and set the fan lock (uses `context.pa
 | `number.adaptive_hvac_ac_setpoint` | AC cooling setpoint (live adjustable) |
 | `number.adaptive_hvac_upstairs_demand_boost` | Setpoint reduction when zones call for cooling (0–2°F, default 1°F) |
 | `number.adaptive_hvac_cool_exterior_threshold` | Live slider for cool exterior gate |
+| `number.adaptive_hvac_heat_exterior_threshold` | Live slider for heat exterior gate; also caps the winter relative gate |
+| `binary_sensor.adaptive_hvac_cooling_blocked` | Zones want AC, a gate says no. Attributes: `reason`, `blocked_reason`, `status`, `aqi`, `aqi_category`, `windows_recommended` |
+| `binary_sensor.adaptive_hvac_heating_blocked` | Winter mirror of the above (v0.4.0) |
+| `binary_sensor.adaptive_hvac_windows_recommended` | Advisory: outdoor air in-band, calm, dry, clean. Attributes: `outdoor_temp`, `aqi`, `aqi_category`, `aqi_ok`, `weather_ok`, `band_min`, `band_max` |
+| `sensor.adaptive_hvac_air_quality` | Outdoor US AQI as the engine sees it. Attributes: `category`, `aqi_ok`, `threshold`, `source_entity` |
+| `number.adaptive_hvac_aqi_threshold` | AQI ceiling for recommending windows (25–200, default 50) |
+| `number.adaptive_hvac_window_min_outdoor` | Bottom of the windows-recommended band (45–70°F, default 60) |
+| `number.adaptive_hvac_window_max_outdoor` | Top of the windows-recommended band (65–85°F, default 75) |
+| `sensor.outdoor_aqi` / `sensor.outdoor_pm2_5` / `sensor.outdoor_pm10` | Open-Meteo REST sensors in `configuration.yaml` (keyless, 15-min poll) — the AQI source |
 | `climate.downstairs_thermostat` | The controlled thermostat |
 | `sensor.upstairs_average_temperature` | Avg of Caleb + Tia + Master temps (`templates.yaml`) |
 
@@ -174,7 +262,14 @@ Physical wall switch presses are detected and set the fan lock (uses `context.pa
 
 ## Dashboard
 
-`/dashboard-hvac` — system status, per-zone cards, upstairs temp, thermostat history, logbook, controls, setpoint sliders, force-evaluate button.
+`/dashboard-hvac` — system status, per-zone cards, upstairs temp, thermostat history, logbook,
+controls, setpoint sliders, the **Air & Windows** card (AQI, windows-recommended, both blocked
+sensors, and the three tuning sliders), and the force-evaluate button.
+
+Generated by `scripts/generate_dashboard.py`, mirrored on-host at
+`/config/scripts/generate_hvac_dashboard.py` for the in-dashboard "Rebuild Dashboard" button —
+**keep both copies in sync manually.** Dashboard changes need a full HA restart to take effect;
+firing `lovelace_updated` is not enough.
 
 ## Testing
 
@@ -222,6 +317,9 @@ curl -s -X POST http://<ha-host>:8123/api/services/homeassistant/restart \
 
 | Version | Key change |
 |---------|-----------|
+| v0.4.1 | Whole-house fan circulation only runs while heat/AC is active, or with windows open when outdoor is cooler than indoor and the coldest floor is still at/above the heat setpoint — fixes the fan running on an idle winter thermostat |
+| v0.4.0 | Outdoor AQI gates the "open the windows" advice (never the HVAC itself); `windows_recommended` absolute 60–75°F band; winter made symmetric — open windows now block heat, winter relative gate, `heating_blocked` sensor; structured `blocked_reason` codes driving per-cause notifications |
+| v0.3.34 | Night mode schedule moved from config flow to live `number` entities |
 | v0.3.15 | Unoccupied zones show WARM/COLD (not PASSIVE COOLING/HEATING) — passive labels require fans actually running |
 | v0.3.14 | Zone statuses distinguish passive vs active — PASSIVE COOLING when AC blocked but fans spinning; COOLING only when compressor active |
 | v0.3.13 | Per-zone "Affects thermostat" toggle — unconditioned zones (garage) control fans only, never call AC/heat |

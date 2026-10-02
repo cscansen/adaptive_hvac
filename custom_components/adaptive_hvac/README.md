@@ -82,8 +82,8 @@ one-tap "Run HVAC anyway" action wired to `switch.adaptive_hvac_manual_override`
 
 **Floor fan circulation:**
 - Zones are grouped by their HA floor assignment
-- When the average temperature difference between floors exceeds the **floor circulation delta** (default 2°F), the thermostat fan is set to `on` to circulate air
-- Fan circulation is suppressed when sleep posture is active
+- When the average temperature difference between floors exceeds the **floor circulation delta** (default 2°F), the thermostat fan is set to `on` to circulate air — but only while heat or AC is actually running
+- With the thermostat idle, circulation is suppressed (no conditioned air to distribute), with one exception: a window is open, outdoor air is cooler than the indoor average, and the coldest floor is still at or above the active heat setpoint — then the fan keeps pulling cool window air through the house
 
 **Degraded mode / failover:**
 - If sensors are unavailable or stale for 2 consecutive evaluation cycles (~6 minutes), the integration enters degraded mode

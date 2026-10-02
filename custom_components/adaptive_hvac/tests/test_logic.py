@@ -518,7 +518,7 @@ class TestFloorCirculation:
         sys_dec = decide_system(ss, zone_decisions, sys_cfg(cool_exterior_threshold=60.0))
         assert sys_dec.thermostat_hvac_mode == "off"
         assert sys_dec.whole_house_fan_mode == "auto"
-        assert any("AC not active" in r for r in sys_dec.reasoning)
+        assert any("Thermostat idle" in r for r in sys_dec.reasoning)
 
     def test_floor_fan_active_when_ac_cooling(self):
         """Summer + AC actively cooling → floor fan follows circulation delta."""
@@ -531,6 +531,55 @@ class TestFloorCirculation:
         sys_dec = decide_system(ss, zone_decisions, sys_cfg(fan_circulation_delta=2.0))
         assert sys_dec.thermostat_hvac_mode == "cool"
         assert sys_dec.whole_house_fan_mode == "on"
+
+    def _decide(self, zones, outdoor, season, heat_setpoint=66.0):
+        ss = sys_state(zones, outdoor=outdoor, season=season)
+        cfg = sys_cfg(fan_circulation_delta=2.0, heat_setpoint=heat_setpoint)
+        zone_decisions = [decide_zone(z, ss, zone_cfg(target=72.0), cfg) for z in zones]
+        return decide_system(ss, zone_decisions, cfg)
+
+    def test_floor_fan_suppressed_when_heat_idle_winter(self):
+        """Winter, thermostat off, windows shut → no circulation despite floor delta."""
+        zones = [
+            zone(name="A", temp=71.0, floor="upstairs", target=72.0),
+            zone(name="B", temp=68.0, floor="downstairs", target=72.0),
+        ]
+        sys_dec = self._decide(zones, outdoor=65.0, season="winter")
+        assert sys_dec.thermostat_hvac_mode == "off"
+        assert sys_dec.whole_house_fan_mode == "auto"
+        assert any("Thermostat idle" in r for r in sys_dec.reasoning)
+
+    def test_windows_open_warmer_inside_circulates(self):
+        """Windows open, outdoor cooler than indoor, house above heat setpoint → fan on."""
+        zones = [
+            zone(name="A", temp=76.0, floor="upstairs", window_open=True),
+            zone(name="B", temp=70.0, floor="downstairs"),
+        ]
+        for season in ("summer", "winter"):
+            sys_dec = self._decide(zones, outdoor=60.0, season=season)
+            assert sys_dec.thermostat_hvac_mode == "off"
+            assert sys_dec.whole_house_fan_mode == "on", season
+            assert any("circulating to pull in cooler air" in r for r in sys_dec.reasoning)
+
+    def test_windows_open_house_already_cold_suppressed(self):
+        """Windows open but coldest floor below heat setpoint → no circulation (2026-10-02 case)."""
+        zones = [
+            zone(name="A", temp=64.6, floor="upstairs", window_open=True),
+            zone(name="B", temp=58.0, floor="downstairs", window_open=True),
+        ]
+        sys_dec = self._decide(zones, outdoor=46.8, season="winter", heat_setpoint=66.0)
+        assert sys_dec.thermostat_hvac_mode == "off"
+        assert sys_dec.whole_house_fan_mode == "auto"
+        assert any("house already cool" in r for r in sys_dec.reasoning)
+
+    def test_windows_open_warmer_outside_suppressed(self):
+        """Windows open but outdoor warmer than indoor → no circulation."""
+        zones = [
+            zone(name="A", temp=76.0, floor="upstairs", window_open=True),
+            zone(name="B", temp=70.0, floor="downstairs"),
+        ]
+        sys_dec = self._decide(zones, outdoor=85.0, season="summer")
+        assert sys_dec.whole_house_fan_mode == "auto"
 
     def test_single_floor_returns_auto(self):
         zones = [zone(name="A", temp=75.0, floor="main"), zone(name="B", temp=70.0, floor="main")]

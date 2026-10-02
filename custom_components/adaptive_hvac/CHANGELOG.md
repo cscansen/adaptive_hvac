@@ -4,6 +4,23 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.1] - 2026-10-02
+
+### Fixed
+- **Whole-house fan no longer circulates when the thermostat is idle.** Floor
+  circulation (thermostat fan `on`) previously ran in winter whenever floors differed
+  by the circulation delta, even with heat off — moving unconditioned (often cold)
+  air around the house. The summer-only "AC off → suppress circulation" guard now
+  applies to every thermostat-off decision in both seasons.
+
+### Changed
+- **Window-cooling exception.** With heat/cool off, circulation still runs when a
+  window is open *and* outdoor air is cooler than the indoor floor average, so the
+  air handler keeps pulling cool window air through the house (e.g. windows open on
+  a warm evening). It stops once the coldest floor falls below the active heat
+  setpoint (night setpoint when night mode is on), so it never chills an
+  already-cold house.
+
 ## [0.4.0] - 2026-08-03
 
 ### Added

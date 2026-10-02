@@ -322,14 +322,38 @@ def _decide_system(
         )
 
     # Floor circulation fan mode — computed before gating so it applies on all off paths.
-    # In summer, suppressed when AC is off (circulating warm air without cold supply has no benefit).
     fan_mode, fan_reasoning = _floor_fan_mode(sys_state.zone_states, cfg, sys_state.sleep_posture)
 
-    def _summer_off_fan_mode() -> tuple[str, list[str]]:
-        """Return fan_mode/reasoning for a summer system-off decision."""
-        if season == "summer" and fan_mode == "on":
-            return "auto", fan_reasoning + ["AC not active — floor circulation suppressed (no cold air to distribute)"]
-        return fan_mode, fan_reasoning
+    def _off_fan_mode() -> tuple[str, list[str]]:
+        """Return fan_mode/reasoning for any thermostat-off decision (both seasons).
+
+        With no heat or cool running there is no conditioned air to distribute, so
+        floor circulation is suppressed. Exception: windows open and the house is
+        warmer than outside — the air handler keeps pulling the cooler window air
+        through. That exception stops once the coldest floor drops below the active
+        heat setpoint so it never chills an already-cold house.
+        """
+        if fan_mode != "on":
+            return fan_mode, fan_reasoning
+        open_windows = any(z.window_open and z.affects_thermostat for z in sys_state.zone_states)
+        floor_avgs = _floor_averages(sys_state.zone_states)
+        outdoor = sys_state.outdoor_temp
+        if open_windows and floor_avgs:
+            indoor_avg = sum(floor_avgs.values()) / len(floor_avgs)
+            coldest = min(floor_avgs.values())
+            if outdoor < indoor_avg and coldest >= cfg.heat_setpoint:
+                return "on", fan_reasoning + [
+                    f"Windows open, outdoor {outdoor:.1f}°F < indoor {indoor_avg:.1f}°F "
+                    f"— circulating to pull in cooler air"
+                ]
+            if outdoor < indoor_avg:
+                return "auto", fan_reasoning + [
+                    f"Windows open but coldest floor {coldest:.1f}°F < heat setpoint "
+                    f"{cfg.heat_setpoint:.0f}°F — floor circulation suppressed (house already cool)"
+                ]
+        return "auto", fan_reasoning + [
+            "Thermostat idle — floor circulation suppressed (no conditioned air to distribute)"
+        ]
 
     # Emergency requests bypass gating (fan stays auto — HVAC fan already runs with compressor/furnace)
     emergency_cool = any(d.mode == "emergency_cooling" for d in zone_decisions)
@@ -371,8 +395,7 @@ def _decide_system(
         summer = season == "summer"
         label = "AC" if summer else "Heat"
         reasoning.append(f"{label} BLOCKED: window open in {zone_list}")
-        # Already season-aware — returns plain fan_mode outside summer.
-        fan_mode_open, fan_reasoning_open = _summer_off_fan_mode()
+        fan_mode_open, fan_reasoning_open = _off_fan_mode()
         return SystemDecision(
             thermostat_hvac_mode="off",
             whole_house_fan_mode=fan_mode_open,
@@ -472,7 +495,7 @@ def _decide_system(
                 )
 
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
-        off_fan_mode, off_fan_reasoning = _summer_off_fan_mode()
+        off_fan_mode, off_fan_reasoning = _off_fan_mode()
         return SystemDecision(
             thermostat_hvac_mode="off",
             whole_house_fan_mode=off_fan_mode,
@@ -544,25 +567,36 @@ def _decide_system(
                 )
 
         zone_statuses = " | ".join(d.status for d in zone_decisions if d.status)
+        off_fan_mode, off_fan_reasoning = _off_fan_mode()
         return SystemDecision(
             thermostat_hvac_mode="off",
-            whole_house_fan_mode=fan_mode,
+            whole_house_fan_mode=off_fan_mode,
             season=season,
             status=f"SYSTEM: OFF (winter, no heating) | {zone_statuses}",
-            reasoning=reasoning + fan_reasoning,
+            reasoning=reasoning + off_fan_reasoning,
             # heating_blocked when zones were requesting heat but gates prevented it
             heating_blocked=bool(heating_zones) and any("Heat BLOCKED" in r for r in reasoning),
             blocked_reason=blocked_reason if heating_zones else "",
         )
 
     # Fallback (shouldn't happen with binary season model)
+    off_fan_mode, off_fan_reasoning = _off_fan_mode()
     return SystemDecision(
         thermostat_hvac_mode="off",
-        whole_house_fan_mode=fan_mode,
+        whole_house_fan_mode=off_fan_mode,
         season=season,
         status="SYSTEM: OFF",
-        reasoning=reasoning + fan_reasoning + ["Unknown season — system off"],
+        reasoning=reasoning + off_fan_reasoning + ["Unknown season — system off"],
     )
+
+
+def _floor_averages(zone_states: list[ZoneState]) -> dict[str, float]:
+    """Average temperature per floor ID (zones with no floor or no reading excluded)."""
+    floors: dict[str, list[float]] = {}
+    for z in zone_states:
+        if z.floor and z.temp > 0:
+            floors.setdefault(z.floor, []).append(z.temp)
+    return {f: sum(temps) / len(temps) for f, temps in floors.items()}
 
 
 def _floor_fan_mode(
@@ -575,17 +609,13 @@ def _floor_fan_mode(
 
     Groups zones by their floor ID (zones with no floor are excluded).
     If any two floors differ by >= cfg.fan_circulation_delta, returns "on".
-    Otherwise returns "auto". Suppression when AC is off is handled in decide_system().
+    Otherwise returns "auto". Suppression when the thermostat is off is handled in decide_system().
     """
-    floors: dict[str, list[float]] = {}
-    for z in zone_states:
-        if z.floor and z.temp > 0:
-            floors.setdefault(z.floor, []).append(z.temp)
+    floor_avgs = _floor_averages(zone_states)
 
-    if len(floors) < 2:
+    if len(floor_avgs) < 2:
         return "auto", []
 
-    floor_avgs = {f: sum(temps) / len(temps) for f, temps in floors.items()}
     max_avg = max(floor_avgs.values())
     min_avg = min(floor_avgs.values())
     delta = max_avg - min_avg
