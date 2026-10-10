@@ -1,5 +1,13 @@
 # Changelog
 
+> ## ⚠️ Superseded — history stops at v0.2.17
+>
+> This file was last updated 2026-05-25 and ends eight minor versions behind. The complete
+> changelog through **v0.4.0** lives in `custom_components/adaptive_hvac/CHANGELOG.md`.
+> New entries go there, not here — a second history forked at 0.2.17 would be worse than none.
+>
+> Kept only for the pre-0.3.0 record.
+
 All notable changes to the Adaptive HVAC integration are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).

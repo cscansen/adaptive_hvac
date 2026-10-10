@@ -1,5 +1,19 @@
 # Adaptive HVAC
 
+> ## ⚠️ Superseded — do not read as current
+>
+> This file documents **v0.2.x** and was last touched 2026-05-25. The integration is now
+> **v0.4.0**. Several behaviors described below were removed outright — most importantly the
+> "occupancy-driven primary zone selection" headline feature, which v0.3.0 replaced entirely
+> (occupancy now gates *local fans only* and never blocks a thermostat decision).
+>
+> **Canonical documentation:**
+> - `custom_components/adaptive_hvac/README.md` — user-facing guide, entities, setup
+> - `custom_components/adaptive_hvac/CHANGELOG.md` — full version history
+> - `docs/adaptive_hvac.md` — decision-table and architecture reference
+>
+> Kept only as a record of the original design intent.
+
 An intelligent, occupancy-aware HVAC integration for Home Assistant. Dynamically selects the primary thermostat based on which rooms are occupied, enforces system-wide window overrides, and respects user fan claims. **Pure decision logic with zero Home Assistant imports** — easily testable and reusable.
 
 ## Features

@@ -1,0 +1,138 @@
+{
+    "id": "front_porch_ambiance_cans_string",
+    "alias": "Front Porch - Ambiance (Cans + String)",
+    "description": "On at dusk if occupied 60s+ (stoop motion or mmWave still target), or after 60s continuous occupancy any time it's dark. 60s hold filters sensor noise (wind-blown clutter, brief blips) - both raw sensors were found to flicker frequently; sustained presence is the reliable signal, not instantaneous state. Off after 10min both clear.",
+    "triggers": [
+        {
+            "platform": "state",
+            "entity_id": "binary_sensor.front_porch_stoop_presence",
+            "to": "on",
+            "for": "00:01:00",
+            "id": "occupied_on"
+        },
+        {
+            "platform": "state",
+            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+            "to": "on",
+            "for": "00:01:00",
+            "id": "occupied_on"
+        },
+        {
+            "platform": "sun",
+            "event": "sunset",
+            "offset": "-00:15:00",
+            "id": "sunset_dusk"
+        },
+        {
+            "platform": "state",
+            "entity_id": "binary_sensor.front_porch_stoop_presence",
+            "to": "off",
+            "for": "00:10:00",
+            "id": "occupied_off"
+        },
+        {
+            "platform": "state",
+            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+            "to": "off",
+            "for": "00:10:00",
+            "id": "occupied_off"
+        }
+    ],
+    "actions": [
+        {
+            "choose": [
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "occupied_off"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.front_porch_stoop_presence",
+                            "state": "off"
+                        },
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+                            "state": "off"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.front_cans",
+                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                ]
+                            },
+                            "action": "homeassistant.turn_off"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "sunset_dusk"
+                        },
+                        {
+                            "condition": "or",
+                            "conditions": [
+                                {
+                                    "condition": "state",
+                                    "entity_id": "binary_sensor.front_porch_stoop_presence",
+                                    "state": "on",
+                                    "for": "00:01:00"
+                                },
+                                {
+                                    "condition": "state",
+                                    "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+                                    "state": "on",
+                                    "for": "00:01:00"
+                                }
+                            ]
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.front_cans",
+                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                ]
+                            },
+                            "action": "homeassistant.turn_on"
+                        }
+                    ]
+                },
+                {
+                    "conditions": [
+                        {
+                            "condition": "trigger",
+                            "id": "occupied_on"
+                        },
+                        {
+                            "condition": "sun",
+                            "after": "sunset",
+                            "after_offset": "-00:15:00"
+                        }
+                    ],
+                    "sequence": [
+                        {
+                            "target": {
+                                "entity_id": [
+                                    "light.front_cans",
+                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                ]
+                            },
+                            "action": "homeassistant.turn_on"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "mode": "single",
+    "max_exceeded": "silent"
+}

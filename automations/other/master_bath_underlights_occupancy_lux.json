@@ -5,14 +5,14 @@
     "triggers": [
         {
             "id": "mb_on",
-            "entity_id": "binary_sensor.master_bathroom_occupancy",
+            "entity_id": "binary_sensor.master_bathroom_presence",
             "to": "on",
             "for": "00:00:02",
             "trigger": "state"
         },
         {
             "id": "mb_off",
-            "entity_id": "binary_sensor.master_bathroom_occupancy",
+            "entity_id": "binary_sensor.master_bathroom_presence",
             "to": "off",
             "for": "00:02:00",
             "trigger": "state"
@@ -39,7 +39,7 @@
                     "conditions": [
                         {
                             "condition": "state",
-                            "entity_id": "binary_sensor.master_bathroom_occupancy",
+                            "entity_id": "binary_sensor.master_bathroom_presence",
                             "state": "on"
                         },
                         {
@@ -94,7 +94,7 @@
                     "conditions": [
                         {
                             "condition": "state",
-                            "entity_id": "binary_sensor.master_bathroom_occupancy",
+                            "entity_id": "binary_sensor.master_bathroom_presence",
                             "state": "off"
                         }
                     ],

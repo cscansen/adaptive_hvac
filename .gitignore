@@ -1,0 +1,19 @@
+archive/automations.yaml
+
+# Python / test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Large artifacts never belong in this (public) repo
+*.tar
+*.tar.gz
+*.zip
+
+# Nested repos with their own GitHub remotes (dynamic_central_audio)
+adaptive_central_audio/
+
+# Local-only HA snapshots (may hold personal data)
+backups/pre_*/
+
+.DS_Store
