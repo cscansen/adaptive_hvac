@@ -196,7 +196,7 @@ When a user manually adjusts a ceiling fan, the integration detects the change a
 - **Midnight** — all fan locks clear automatically; normal control resumes
 - **Manual release** — toggle `switch.adaptive_hvac_{zone}_fan_locked` OFF at any time to release immediately
 
-Physical wall switch presses are detected the same as app or UI adjustments.
+Physical wall switch presses are detected the same as app or UI adjustments. The integration's own fan commands never set the lock (fixed in v0.4.2 — earlier versions could lock a fan the integration had just turned on).
 
 ## Thermostat setpoint ownership
 
@@ -307,6 +307,7 @@ Check `sensor.adaptive_hvac_status` reasoning attribute. Common causes:
 **Fan not responding**
 - Check the zone's auto-control switch (`switch.adaptive_hvac_{zone}_auto`) is ON
 - Check the fan lock switch (`switch.adaptive_hvac_{zone}_fan_locked`) — toggle OFF to release immediately
+- Lock ON but nobody touched the fan, and the zone reasoning says "Fan locked by user"? On v0.4.1 and earlier the integration could lock its own fan — update to v0.4.2+ and toggle the lock OFF
 
 **Floor fan running when it shouldn't**
 - Reduce the `number.adaptive_hvac_fan_circulation_delta` threshold

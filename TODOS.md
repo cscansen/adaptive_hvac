@@ -24,6 +24,14 @@ Convention: areas "Group - Specific" (Office - Caleb, Master - Bath, Yard - East
       renamed `*_homekit` and their entries disabled (2026-10-10). Delete the disabled twins once the Meross ones prove out.
 - [ ] Default dashboard `strategy.areas.order` has stale ids (tech_closet, guest_bathroom, work_bench, home_gym)
 
+## Adaptive HVAC v0.4.2 — confirm self-lock fix live — PENDING (deployed 2026-10-11)
+v0.4.2 tags the integration's own fan calls with a Context so they don't set the fan lock (bug: living
+room fan turned on by PASSIVE COOLING 2026-10-11 12:25 MDT and locked itself; Tia/Master same at 11:51/11:54).
+Deployed + HA restarted; end-to-end not yet observed (forced test inconclusive — zone flipped to heating).
+- [ ] Next time the integration changes a fan's state, confirm that zone's `_fan_locked` switch stays OFF
+      (`/api/logbook` on the fan + lock: lock must not flip in the same second as a `call_service` fan change).
+- [ ] HACS still showed installed/latest v0.4.1 at deploy — click Update when v0.4.2 appears (files identical, no restart).
+
 ## Adaptive HVAC — "No zone data available" for ~3 min after every HA start — PENDING (seen 2026-10-10)
 
 - After the 14:40 UTC restart, `sensor.adaptive_hvac_status` read "No zone data available" 14:41:09 → 14:44:09, then

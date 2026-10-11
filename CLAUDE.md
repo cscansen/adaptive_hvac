@@ -115,10 +115,12 @@ Built natively into the Adaptive HVAC integration (v0.3.6+). Each zone gets a `s
 | Caleb's Office | `switch.adaptive_hvac_calebs_office_fan_locked` |
 | Tia's Office | `switch.adaptive_hvac_tias_office_fan_locked` |
 | Master Bedroom | `switch.adaptive_hvac_master_bedroom_fan_locked` |
-| Garage | `switch.adaptive_hvac_garage_fan_locked` |
+| Living Room | `switch.adaptive_hvac_living_room_fan_locked` |
 
-### Known edge case
-Physical switch presses have no `context.user_id` — they bypass the claim system. HVAC can still override a fan set via physical switch.
+### What sets the lock
+Any fan change except the integration's own commands (tagged with an integration-owned `Context`, v0.4.2) and automation-originated calls (`parent_id` set, no `user_id`). Physical switch presses and HA UI/app/HomeKit changes all lock.
+
+**Pre-v0.4.2 bug:** the integration's own fan dispatches had no `parent_id`, so it locked its own fans — an integration-started fan showed "Fan locked by user" and was never turned back off until midnight. If a lock turns on in the same second as an integration fan command, that's this bug regressing.
 
 ## Master Bathroom Lights
 
