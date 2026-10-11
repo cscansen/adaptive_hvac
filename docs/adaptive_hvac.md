@@ -1,6 +1,6 @@
 # Adaptive HVAC Integration — Complete Reference
 
-**Version:** v0.4.1  
+**Version:** v0.4.2  
 **Source:** `/custom_components/adaptive_hvac/`  
 **Status:** Deployed, replaces old 13-automation YAML system
 
@@ -80,10 +80,10 @@ One per room. Settings → Integrations → Add → Adaptive HVAC
 
 | Zone | Temp sensor | Fans | Affects thermostat | Auto switch | Fan lock switch |
 |------|-------------|------|--------------------|-------------|-----------------|
-| Caleb's Office | `sensor.caleb_s_office_hygrometer_temperature` | `fan.caleb_office_ceiling` | Yes | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
-| Tia's Office | `sensor.tias_office_hygrometer_temperature` | `fan.tia_office_ceiling_fan` | Yes | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
-| Master Bedroom | `sensor.meter_pro_2689_temperature` | (fans TBD) | Yes | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
-| Living Room | `sensor.downstairs_thermostat_temperature` | — | Yes | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
+| Caleb's Office | `sensor.office_caleb_hygrometer_temperature` | `fan.office_caleb_ceiling_fan` | Yes | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
+| Tia's Office | `sensor.office_tia_hygrometer_temperature` | `fan.office_tia_ceiling_fan` | Yes | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
+| Master Bedroom | `sensor.master_bedroom_hygrometer_temperature` | (fans TBD) | Yes | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
+| Living Room | `sensor.downstairs_thermostat_temperature` | `fan.living_room_ceiling_fan` | Yes | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
 
 The Garage was removed as a zone on 2026-07-26 — it was `affects_thermostat: false` anyway, so this
 changed only fan control. Its compound door-OR-occupancy logic now lives in
@@ -226,7 +226,7 @@ Built into the integration since v0.3.6. No external automations or helpers need
 | Midnight | All zone locks clear automatically |
 | Manual release | Toggle the fan locked switch OFF |
 
-Physical wall switch presses are detected and set the fan lock (uses `context.parent_id` to distinguish integration's own dispatches from all other sources).
+Physical wall switch presses and HA UI/app changes set the fan lock. The integration's own fan commands are tagged with an integration-owned `Context` and ignored (v0.4.2 — previously relied on `context.parent_id`, which coordinator dispatches don't have, so the integration locked its own fans). Automation-originated calls (`parent_id` set, no `user_id`) are also ignored.
 
 ## Key Entities
 
@@ -317,6 +317,7 @@ curl -s -X POST http://<ha-host>:8123/api/services/homeassistant/restart \
 
 | Version | Key change |
 |---------|-----------|
+| v0.4.2 | Integration's own fan commands no longer trip the user fan lock — dispatched fan calls carry an integration-owned context the fan-change handler ignores (previously an integration-started fan got "locked by user" until midnight) |
 | v0.4.1 | Whole-house fan circulation only runs while heat/AC is active, or with windows open when outdoor is cooler than indoor and the coldest floor is still at/above the heat setpoint — fixes the fan running on an idle winter thermostat |
 | v0.4.0 | Outdoor AQI gates the "open the windows" advice (never the HVAC itself); `windows_recommended` absolute 60–75°F band; winter made symmetric — open windows now block heat, winter relative gate, `heating_blocked` sensor; structured `blocked_reason` codes driving per-cause notifications |
 | v0.3.34 | Night mode schedule moved from config flow to live `number` entities |

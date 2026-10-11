@@ -5,7 +5,7 @@
     "triggers": [
         {
             "trigger": "state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "to": [
                 "unavailable",
                 "unknown"
@@ -15,7 +15,7 @@
         },
         {
             "trigger": "state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "from": [
                 "unavailable",
                 "unknown"
@@ -24,7 +24,7 @@
         },
         {
             "trigger": "state",
-            "entity_id": "sensor.meter_pro_2689_temperature",
+            "entity_id": "sensor.master_bedroom_hygrometer_temperature",
             "to": [
                 "unavailable",
                 "unknown"
@@ -34,7 +34,7 @@
         },
         {
             "trigger": "state",
-            "entity_id": "sensor.meter_pro_2689_temperature",
+            "entity_id": "sensor.master_bedroom_hygrometer_temperature",
             "from": [
                 "unavailable",
                 "unknown"
@@ -86,7 +86,7 @@
                                     "conditions": [
                                         {
                                             "condition": "numeric_state",
-                                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                            "entity_id": "sensor.office_caleb_hygrometer_temperature",
                                             "above": 73.9
                                         },
                                         {
@@ -121,7 +121,7 @@
                                     "conditions": [
                                         {
                                             "condition": "numeric_state",
-                                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                            "entity_id": "sensor.office_caleb_hygrometer_temperature",
                                             "below": 65
                                         },
                                         {

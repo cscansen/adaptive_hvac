@@ -5,46 +5,46 @@
     "triggers": [
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "below": 70,
             "for": "00:05:00",
             "id": "comfortable"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "above": 71.9,
             "for": "00:02:00",
             "id": "passive"
         },
         {
             "trigger": "template",
-            "value_template": "{{ states('sensor.caleb_s_office_hygrometer_temperature') | float(0) >= 70 and states('sensor.caleb_s_office_hygrometer_humidity') | float(0) > 55 }}",
+            "value_template": "{{ states('sensor.office_caleb_hygrometer_temperature') | float(0) >= 70 and states('sensor.office_caleb_hygrometer_humidity') | float(0) > 55 }}",
             "for": "00:02:00",
             "id": "passive_humid"
         },
         {
             "trigger": "template",
-            "value_template": "{{ states('sensor.caleb_s_office_hygrometer_temperature') | float(0) >= 74 and states('sensor.power_production_now') | float(0) > 2000 and 10 <= now().hour < 15 }}",
+            "value_template": "{{ states('sensor.office_caleb_hygrometer_temperature') | float(0) >= 74 and states('sensor.power_production_now') | float(0) > 2000 and 10 <= now().hour < 15 }}",
             "for": "00:02:00",
             "id": "escalate_solar"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "above": 73.9,
             "for": "00:30:00",
             "id": "escalate_standard"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "above": 77.9,
             "id": "emergency"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.meter_pro_2689_temperature",
+            "entity_id": "sensor.master_bedroom_hygrometer_temperature",
             "above": 71.9,
             "for": "00:05:00",
             "id": "master_bedroom_passive"
@@ -73,7 +73,7 @@
             "conditions": [
                 {
                     "condition": "state",
-                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                    "entity_id": "sensor.office_caleb_hygrometer_temperature",
                     "state": [
                         "unavailable",
                         "unknown"
@@ -97,7 +97,7 @@
                             "if": [
                                 {
                                     "condition": "numeric_state",
-                                    "entity_id": "sensor.meter_pro_2689_temperature",
+                                    "entity_id": "sensor.master_bedroom_hygrometer_temperature",
                                     "above": 70
                                 }
                             ],
@@ -106,9 +106,9 @@
                                     "action": "fan.turn_on",
                                     "target": {
                                         "entity_id": [
-                                            "fan.caleb_office_ceiling",
-                                            "fan.tia_office_ceiling_fan",
-                                            "fan.fan"
+                                            "fan.office_caleb_ceiling_fan",
+                                            "fan.office_tia_ceiling_fan",
+                                            "fan.family_room_ceiling_fan"
                                         ]
                                     },
                                     "data": {
@@ -121,9 +121,9 @@
                                     "action": "fan.turn_off",
                                     "target": {
                                         "entity_id": [
-                                            "fan.caleb_office_ceiling",
-                                            "fan.tia_office_ceiling_fan",
-                                            "fan.fan"
+                                            "fan.office_caleb_ceiling_fan",
+                                            "fan.office_tia_ceiling_fan",
+                                            "fan.family_room_ceiling_fan"
                                         ]
                                     }
                                 },
@@ -210,9 +210,9 @@
                             "action": "fan.turn_on",
                             "target": {
                                 "entity_id": [
-                                    "fan.caleb_office_ceiling",
-                                    "fan.tia_office_ceiling_fan",
-                                    "fan.fan"
+                                    "fan.office_caleb_ceiling_fan",
+                                    "fan.office_tia_ceiling_fan",
+                                    "fan.family_room_ceiling_fan"
                                 ]
                             },
                             "data": {
@@ -246,12 +246,12 @@
                             "conditions": [
                                 {
                                     "condition": "numeric_state",
-                                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                                    "entity_id": "sensor.office_caleb_hygrometer_temperature",
                                     "above": 68
                                 },
                                 {
                                     "condition": "numeric_state",
-                                    "entity_id": "sensor.meter_pro_2689_temperature",
+                                    "entity_id": "sensor.master_bedroom_hygrometer_temperature",
                                     "above": 68
                                 }
                             ]
@@ -262,8 +262,8 @@
                             "action": "fan.turn_on",
                             "target": {
                                 "entity_id": [
-                                    "fan.caleb_office_ceiling",
-                                    "fan.tia_office_ceiling_fan"
+                                    "fan.office_caleb_ceiling_fan",
+                                    "fan.office_tia_ceiling_fan"
                                 ]
                             },
                             "data": {
@@ -311,7 +311,7 @@
                         },
                         {
                             "condition": "numeric_state",
-                            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                            "entity_id": "sensor.office_caleb_hygrometer_temperature",
                             "below": 74
                         }
                     ],
@@ -320,9 +320,9 @@
                             "action": "fan.turn_on",
                             "target": {
                                 "entity_id": [
-                                    "fan.caleb_office_ceiling",
-                                    "fan.tia_office_ceiling_fan",
-                                    "fan.fan"
+                                    "fan.office_caleb_ceiling_fan",
+                                    "fan.office_tia_ceiling_fan",
+                                    "fan.family_room_ceiling_fan"
                                 ]
                             },
                             "data": {
@@ -374,9 +374,9 @@
                             "action": "fan.turn_on",
                             "target": {
                                 "entity_id": [
-                                    "fan.caleb_office_ceiling",
-                                    "fan.tia_office_ceiling_fan",
-                                    "fan.fan"
+                                    "fan.office_caleb_ceiling_fan",
+                                    "fan.office_tia_ceiling_fan",
+                                    "fan.family_room_ceiling_fan"
                                 ]
                             },
                             "data": {
@@ -430,9 +430,9 @@
                             "action": "fan.turn_on",
                             "target": {
                                 "entity_id": [
-                                    "fan.caleb_office_ceiling",
-                                    "fan.tia_office_ceiling_fan",
-                                    "fan.fan"
+                                    "fan.office_caleb_ceiling_fan",
+                                    "fan.office_tia_ceiling_fan",
+                                    "fan.family_room_ceiling_fan"
                                 ]
                             },
                             "data": {

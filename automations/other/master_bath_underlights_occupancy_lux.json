@@ -82,7 +82,7 @@
                         {
                             "target": {
                                 "entity_id": [
-                                    "light.led_underlights",
+                                    "light.master_bath_underlights",
                                     "light.master_bath_dimmer"
                                 ]
                             },
@@ -102,7 +102,7 @@
                         {
                             "target": {
                                 "entity_id": [
-                                    "light.led_underlights",
+                                    "light.master_bath_underlights",
                                     "light.master_bath_dimmer"
                                 ]
                             },

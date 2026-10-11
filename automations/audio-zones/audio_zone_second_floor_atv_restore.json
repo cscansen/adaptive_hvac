@@ -6,7 +6,7 @@
     {
       "platform": "state",
       "entity_id": [
-        "media_player.tias_office_apple_tv",
+        "media_player.office_tia_apple_tv",
         "media_player.family_room_apple_tv"
       ],
       "to": ["idle", "off", "paused"]
@@ -15,7 +15,7 @@
   "condition": [
     {
       "condition": "state",
-      "entity_id": "media_player.tias_office_apple_tv",
+      "entity_id": "media_player.office_tia_apple_tv",
       "state": ["idle", "off", "paused"]
     },
     {

@@ -7,7 +7,7 @@
       "entity_id": [
         "binary_sensor.garage_occupied",
         "binary_sensor.garage_man_door_sensor_contact",
-        "binary_sensor.garage_entrance_contact"
+        "binary_sensor.garage_entry_door"
       ],
       "to": [
         "on"
@@ -42,7 +42,7 @@
           "sequence": [
             {
               "target": {
-                "entity_id": "light.garage_work_bench_outlet"
+                "entity_id": "light.garage_work_bench_light"
               },
               "action": "light.turn_on"
             },
@@ -99,7 +99,7 @@
           "sequence": [
             {
               "target": {
-                "entity_id": "light.garage_work_bench_outlet"
+                "entity_id": "light.garage_work_bench_light"
               },
               "action": "light.turn_off"
             },
@@ -115,7 +115,7 @@
                 {
                   "action": "remote.send_command",
                   "target": {
-                    "entity_id": "remote.garage"
+                    "entity_id": "remote.garage_apple_tv"
                   },
                   "data": {
                     "command": "home"

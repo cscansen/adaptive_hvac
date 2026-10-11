@@ -46,7 +46,7 @@
                     "sequence": [
                         {
                             "target": {
-                                "entity_id": "light.h6169"
+                                "entity_id": "light.family_room_tv_backlight"
                             },
                             "action": "light.turn_on"
                         }
@@ -62,7 +62,7 @@
                     "sequence": [
                         {
                             "target": {
-                                "entity_id": "light.h6169"
+                                "entity_id": "light.family_room_tv_backlight"
                             },
                             "action": "light.turn_off"
                         }
@@ -78,7 +78,7 @@
                     "sequence": [
                         {
                             "target": {
-                                "entity_id": "light.h6169"
+                                "entity_id": "light.family_room_tv_backlight"
                             },
                             "action": "light.turn_off"
                         }

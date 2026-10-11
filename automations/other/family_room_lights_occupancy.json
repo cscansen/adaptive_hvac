@@ -5,14 +5,14 @@
     "triggers": [
         {
             "id": "presence_detected",
-            "entity_id": "binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_2",
+            "entity_id": "binary_sensor.family_room_fp2_family_room",
             "from": "off",
             "to": "on",
             "trigger": "state"
         },
         {
             "id": "presence_cleared",
-            "entity_id": "binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_2",
+            "entity_id": "binary_sensor.family_room_fp2_family_room",
             "from": "on",
             "to": "off",
             "trigger": "state"

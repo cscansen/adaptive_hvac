@@ -46,10 +46,10 @@ One per irrigation zone. Settings → Integrations → Add → Adaptive Irrigati
 
 | Zone | Valve Switch | Soil Sensor | Motion Sensor | Notes |
 |------|-------------|-------------|---------------|-------|
-| **Yard East** | `switch.yardian_controller_yard_east` | `sensor.east_yard_soil_sensor_humidity` | `binary_sensor.yard_east_motion` | Alley-facing; use motion for traffic deferrals |
+| **Yard East** | `switch.yardian_controller_yard_east` | `sensor.yard_east_soil_moisture` | `binary_sensor.yard_east_motion` | Alley-facing; use motion for traffic deferrals |
 | **Yard Middle** | `switch.yardian_controller_yard_middle` | avg(east + west) | `binary_sensor.yard_gazebo_slider_motion` | Gazebo area |
-| **Yard West** | `switch.yardian_controller_yard_west` | `sensor.back_yard_soil_sensor_humidity` | `binary_sensor.yard_west_motion` | Alley-facing; use motion for traffic deferrals |
-| **Front Yard** | `switch.yardian_controller_front_yard` | `sensor.front_yard_soil_sensor_humidity` | — | No motion sensor yet |
+| **Yard West** | `switch.yardian_controller_yard_west` | `sensor.yard_west_soil_moisture` | `binary_sensor.yard_west_motion` | Alley-facing; use motion for traffic deferrals |
+| **Front Yard** | `switch.yardian_controller_front_yard` | `sensor.yard_front_soil_moisture` | — | No motion sensor yet |
 | **Drip Zone** | `switch.yardian_controller_drip` | — | — | Sensor-free; peer trend only |
 
 ### Soil Sensor Calibration (Third Reality, 2026-05-17)
@@ -153,7 +153,7 @@ behavior documented in `/mnt/nas/ai-workspace/documentation/homeassistant/irriga
 ## Known Issues & Workarounds
 
 ### East Sensor Staleness (2026-05-17)
-`sensor.east_yard_soil_sensor_humidity` drops offline overnight (last update ~11pm). Zigbee integration loses connection; hardware is fine. 
+`sensor.yard_east_soil_moisture` drops offline overnight (last update ~11pm). Zigbee integration loses connection; hardware is fine. 
 - **Workaround:** Staleness window extended from 4h → 8h
 - **Long-term fix:** Investigate Zigbee coordinator health, sensor battery, reporting interval config
 

@@ -38,7 +38,7 @@
 - **Not AirPlay 2 grouping** — that approach (`pyatv`/`pyatv_bridge.py`) was tried in v0.4.0–0.4.4 and abandoned: it requires MRP protocol credentials, and none of this household's paired Apple TVs have them (confirmed directly against live `core.config_entries` — only AirPlay/Companion/RAOP creds exist), and HA's `apple_tv` integration's reconfigure flow offers no way to add MRP. Don't re-attempt AirPlay grouping without first re-pairing the Apple TVs with MRP included (may not even be offered anymore — check before spending time on it).
 - **What it actually does:** a plain flag that suspends a zone's ATV-exclusion gate, so central audio keeps routing to that zone's HTD amp even while its local ATV plays — instead of the local ATV excluding the zone as before. Central and the local ATV play **independently and unsynced** (no shared clock, no AirPlay group) — that's an accepted limitation, not a bug.
 - System-level: `switch.dynamic_central_audio_central_audio_party_mode` (suspends every zone's exclusion; auto-trigger app-allowlisted via `party_mode_trigger_apps`, default AirPlay/Music, configured in the system's options flow). Zone-level: `switch.dynamic_central_audio_<zone>_party_mode` (suspends just that zone; manual toggle only, no config).
-- Garage is amp-only with an `amp_switch` (`switch.extra1`) — its ATV exclusion is intentionally **not** suspended by Party Mode (would drive the same speakers from two amps); unaffected either way.
+- Garage is amp-only with an `amp_switch` (`switch.garage_amp`) — its ATV exclusion is intentionally **not** suspended by Party Mode (would drive the same speakers from two amps); unaffected either way.
 - Party Mode clears automatically when System Active or a zone's Follow Me turns off, and always starts off after an HA restart (not restored). See `PARTY_MODE.md` in the repo for full design/history.
 - Requires a full HA restart after HACS updates this integration — new Python modules and `manifest.json` requirements (`pyatv`) don't take effect on a config reload alone.
 
@@ -59,12 +59,12 @@
 - Apple TV follow-me: `switch.dynamic_central_audio_central_audio_apple_tv_living_room_follow_me`
 
 ### Sources
-- AirPlay: `media_player.airplay_downstairs` — always active (no app filter)
+- AirPlay: `media_player.central_airplay` — always active (no app filter)
 - Apple TV: `media_player.living_room_apple_tv` — app filter: `com.apple.TVMusic` only (music triggers follow-me; video does not)
 - Volume per zone is set by DCA directly via `media_player.volume_set` using `base_volume + volume_offset` — no helper entities involved
 
 ### Garage zone (amp-only)
-- No media player — DCA manages `switch.extra1` (amp) directly via ATV exclusion
+- No media player — DCA manages `switch.garage_amp` (amp) directly via ATV exclusion
 - ATV exclusion: `media_player.garage_apple_tv` → amp on/off; restore: `all_stopped` + 30s delay
 - No `bypass_app_ids` — garage ATV always drives local amp regardless of app
 - Automation `garage_atv_stop_on_amp_off`: amp turns off → ATV stops (no conditions)
@@ -79,7 +79,7 @@ Most yard/perimeter cameras are UniFi Protect and expose both a motion sensor an
 | Yard (plain) | UniFi | `binary_sensor.yard_motion` | — (no person detection) |
 | Yard Middle / Gazebo-Slider | UniFi | `binary_sensor.yard_gazebo_slider_motion` | `binary_sensor.yard_gazebo_slider_person_detected` |
 | Driveway | UniFi | `binary_sensor.driveway_motion` | `binary_sensor.driveway_person_detected` |
-| Front Door | Reolink | `binary_sensor.front_door_motion_2` | `binary_sensor.front_door_person_detected_2` |
+| Front Door | Reolink | `binary_sensor.front_door_motion_2` | `binary_sensor.front_door_person_detected` |
 | Back Field | Reolink | `binary_sensor.back_field_motion` | `binary_sensor.back_field_person` |
 | Lexus / Pony (garage entry) | — | `binary_sensor.lexus_motion` / `binary_sensor.pony_motion` | — (no person detection) |
 
@@ -88,15 +88,15 @@ Most yard/perimeter cameras are UniFi Protect and expose both a motion sensor an
 - The five person-detection sensors (Yard East, Yard West, Driveway, Front Door, Back Field) feed `automation.security_lights_perimeter_loiter_boost` — see Front Porch Lighting below
 
 ## Garage
-- Presence sensor (mmWave): `binary_sensor.garage_presence_sensor_presence` (+ `_moving_target`, `_still_target`)
+- Presence sensor (mmWave): `binary_sensor.garage_presence_presence` (+ `_moving_target`, `_still_target`)
 - Occupied group: `binary_sensor.garage_occupied` — OR of mmWave presence + pony/lexus/fridge camera motion
 - Fan switch: `switch.garage_fans`
 - Apple TV: `media_player.garage_apple_tv`
-- Amp: `switch.extra1` (powers ATV speakers only — HTD zone has its own amp)
+- Amp: `switch.garage_amp` (powers ATV speakers only — HTD zone has its own amp)
 - Temperature/humidity: `sensor.garage_hygrometer_temperature` / `sensor.garage_hygrometer_humidity`
 - Fan cooling automation: on after 2min presence + outdoor temp >80°F (`weather.forecast_home` temperature attribute); off after 15min mmWave empty
 - Fan door ventilation automation (`garage_fan_door_ventilation`): on when both bay doors open 5+ min + garage temp >60°F, 6am–9am only; off when both doors closed and garage empty
-- Automation `garage_atv_stop_on_amp_off`: amp (`switch.extra1`) turns off → immediately stops garage ATV (no conditions)
+- Automation `garage_atv_stop_on_amp_off`: amp (`switch.garage_amp`) turns off → immediately stops garage ATV (no conditions)
 - DCA handles amp on/off via zone occupancy + ATV exclusion; the automation is the cleanup link
 - Automations: `garage_fan_cooling_on`, `garage_fan_cooling_off`, `garage_atv_stop_on_amp_off`, `garage_fan_door_ventilation`
 
@@ -123,7 +123,7 @@ Physical switch presses have no `context.user_id` — they bypass the claim syst
 ## Master Bathroom Lights
 
 - Dimmer: `light.master_bath_dimmer` — physical switch
-- LEDs: `light.led_underlights` — 0-10V strip
+- LEDs: `light.master_bath_underlights` — 0-10V strip
 - Always in sync via bidirectional pair: **Dimmer drives 0-10V** (ID: 1767225558095) + **0-10V reflects to dimmer** (ID: 1767248157121). Physical switch use propagates unconditionally — no block conditions on the sync pair.
 - Occupancy automation: **Master Bath - Underlights (Occupancy + Lux)** (ID: 1771288057410, `automations/other/master_bath_underlights_occupancy_lux.json`)
   - Turns on when occupied 2s + NOT both in bed + (sun down OR daytime lux < 300)
@@ -136,31 +136,31 @@ Physical switch presses have no `context.user_id` — they bypass the claim syst
 Two separate automations, deliberately kept apart — ambiance (cozy sitting) and security (perimeter loitering) are different concerns and were tangled together in earlier drafts before landing on this split.
 
 ### Ambiance: Front Cans + String Lights
-`automation.front_porch_ambiance_cans_string` (`automations/other/front_porch_ambiance_cans_string.json`) — turns on `light.front_cans` + the String Lights switch (`switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3`) when Caleb/Tia are sitting on the stoop or in the porch chairs after dark. No time-of-day cutoff — if they're out there at 1am they still want the lights.
-- Triggers: `binary_sensor.front_porch_stoop_presence` (template — actually just `binary_sensor.front_door_motion_2` + wind gate, **not** AI loiter-filtered, correcting an earlier wrong assumption) OR `binary_sensor.front_porch_front_porch_presence_still_target` (mmWave/ESP32 radar, gate-based) → `on`, **held for 60s continuous** before firing (see "mmWave false positives" below for why), gated to after dusk (-15min).
+`automation.front_porch_ambiance_cans_string` (`automations/other/front_porch_ambiance_cans_string.json`) — turns on `light.front_porch_cans` + the String Lights switch (`switch.front_porch_string_lights`) when Caleb/Tia are sitting on the stoop or in the porch chairs after dark. No time-of-day cutoff — if they're out there at 1am they still want the lights.
+- Triggers: `binary_sensor.front_porch_stoop_presence` (template — actually just `binary_sensor.front_door_motion_2` + wind gate, **not** AI loiter-filtered, correcting an earlier wrong assumption) OR `binary_sensor.front_porch_presence_still_target` (mmWave/ESP32 radar, gate-based) → `on`, **held for 60s continuous** before firing (see "mmWave false positives" below for why), gated to after dusk (-15min).
 - Off: only once **both** sensors have been `off` for 10 minutes — avoids killing the lights just because one sensor cleared while the other still shows occupied.
 - The mmWave sensor family also exposes `_moving_target` and blanket `_presence` — deliberately NOT used here (too broad/close-range; see Perimeter Security below for why mmWave isn't used for property-line detection).
 - **Do not wire this automation to `binary_sensor.front_porch_swings_occupied` / `front_porch_stoop_occupied`** (in `templates.yaml`) — those predate this work and were built for the DCA audio follow-me system, not lighting. They tolerate rapid flicker fine for audio zone routing but are NOT reliable occupancy signals for a visible light — confirmed `swings_occupied` flickers on/off every few seconds even with wind well under its 12mph gate. Don't repurpose shared-subsystem templates for a new consumer without checking who else depends on their exact behavior.
 
 #### mmWave false positives (found + fixed 2026-07-11/12)
-Engineering-mode diagnostics (`switch.front_porch_front_porch_presence_engineering_mode`) exposed per-gate (g0-g8, 0.75m/gate) move/still energy + thresholds. With the porch empty, nearly every gate except g8 exceeded its threshold at some point over a 2-hour window; g2 (~1.5-2.25m) was chronically over. Chairs sit 8-15ft out (~gates 3-6), which overlaps the noisiest gates — so noise and signal share the same amplitude range and simple threshold-raising has a ceiling (noise saturates to the sensor's max reading, same as real presence would). Raised the worst-offending gate thresholds anyway (g2→95, g3→50, g4→50, g5→99, g6→99, g7→50 via their `number.front_porch_front_porch_presence_g*_still_threshold` entities) as a floor-level improvement, but the actual fix was moving the noise-filtering to the automation: require 60s continuous `on` before treating either sensor as real occupancy (of 567 `swings_occupied` on-spans sampled, only 56 exceeded 60s — most noise is brief).
+Engineering-mode diagnostics (`switch.front_porch_presence_engineering_mode`) exposed per-gate (g0-g8, 0.75m/gate) move/still energy + thresholds. With the porch empty, nearly every gate except g8 exceeded its threshold at some point over a 2-hour window; g2 (~1.5-2.25m) was chronically over. Chairs sit 8-15ft out (~gates 3-6), which overlaps the noisiest gates — so noise and signal share the same amplitude range and simple threshold-raising has a ceiling (noise saturates to the sensor's max reading, same as real presence would). Raised the worst-offending gate thresholds anyway (g2→95, g3→50, g4→50, g5→99, g6→99, g7→50 via their `number.front_porch_front_porch_presence_g*_still_threshold` entities) as a floor-level improvement, but the actual fix was moving the noise-filtering to the automation: require 60s continuous `on` before treating either sensor as real occupancy (of 567 `swings_occupied` on-spans sampled, only 56 exceeded 60s — most noise is brief).
 
 ### Perimeter Security: reactive per-zone lighting
 `automation.security_lights_perimeter_loiter_boost` (`automations/other/security_lights_perimeter_loiter_boost.json`) — when a camera's AI person-detection fires for a given zone (see Camera Sensors table above) and it's dark out, turns on the real fixture(s) nearest that zone. Off ~10 min after **all** sensors feeding that fixture have cleared (mode: `queued`, since multiple zones can trigger close together and `single` mode would drop overlapping detections).
 
 | Zone sensor | Fixture(s) turned on |
 |---|---|
-| `binary_sensor.front_door_person_detected_2` | `light.front_cans` |
+| `binary_sensor.front_door_person_detected` | `light.front_porch_cans` |
 | `binary_sensor.back_field_person` | `light.back_field_floodlight` |
 | `binary_sensor.driveway_person_detected` | Shed Exterior Outlet + `light.back_field_floodlight` |
 | `binary_sensor.yard_west_person_detected` | Shed Exterior Outlet |
-| `binary_sensor.yard_east_person_detected` | `light.gazebo` + Sliding Glass Doors switch + `light.front_cans` |
+| `binary_sensor.yard_east_person_detected` | `light.gazebo_lights` + Sliding Glass Doors switch + `light.front_porch_cans` |
 
 mmWave (`front_porch_front_porch_presence_*`) is porch-only/close-range and was explicitly ruled out for perimeter/property-line detection ("mmWave is too close — that means they're in my property"); only camera AI person-detection feeds this automation.
 
 ### Label semantics (restructured 2026-07-11)
 - **`security_lights`** label — now **only** `light.front_door_entry_lights_outlet`. Unconditional dusk(-30min)/dawn(+30min) schedule via `automation.security_lights_on`/`security_lights_off` — stays on all night regardless of activity, by design (aesthetic/entry visibility, not motion-reactive).
-- **`dynamic_security_lighting`** label — Sliding Glass Doors switch, `light.back_field_floodlight`, `light.gazebo`, and the Shed Exterior Outlet (was already tagged here before this work, previously unused by any automation). These were moved OFF the fixed dusk/dawn schedule and are now purely reactive via `security_lights_perimeter_loiter_boost`, to save energy vs. running all night.
+- **`dynamic_security_lighting`** label — Sliding Glass Doors switch, `light.back_field_floodlight`, `light.gazebo_lights`, and the Shed Exterior Outlet (was already tagged here before this work, previously unused by any automation). These were moved OFF the fixed dusk/dawn schedule and are now purely reactive via `security_lights_perimeter_loiter_boost`, to save energy vs. running all night.
 - Do not add entities back to `security_lights` expecting reactive behavior — that label is schedule-only. Reactive/motion-triggered fixtures belong in `dynamic_security_lighting`.
 
 ### Known residual risk
@@ -176,7 +176,7 @@ The 60s hold (above) is deployed and live, but the underlying cause of the mmWav
 ## Master Bedroom Lights
 
 - Lights: `light.master_bedroom_manual_lights`, `light.master_bedroom_nightstands`
-- Under-bed: `light.master_under_bed_light` — night-motion only (see Under Bed Night Motion below)
+- Under-bed: `light.master_bedroom_under_bed_light` — night-motion only (see Under Bed Night Motion below)
 - **Occupancy automation** (ID: 1768187945725, `automations/other/master_bedroom_occupancy_lights.json`):
   - ON when occupied + sleep posture off + no one in bed + (sun down OR bathroom lux < 300)
   - Uses `sensor.master_bathroom_illuminance` as daytime lux gate — bedroom FP2 light sensor caps at 9 lx and is unusable for daylight detection
@@ -210,19 +210,19 @@ Both out of bed 5+ min → Exit sets posture OFF → posture is now OFF → they
 `master_bedroom_occupied` (group: closet motion + master bathroom occupancy + FP2 mmWave presence) intermittently flaps once someone is lying still in bed — the FP2 sensor in particular can cycle on/off every ~1s, which kept resetting the original path's 2-min "OFF" timer and prevented Arm from ever firing on nights it happened. The `bed_occupied_both` bypass sidesteps this since it's pressure-based and unaffected by that flapping — it only bounces during brief/transient bed contact (e.g. folding laundry on the bed). Originally held 5min to clear that transient case; **retimed to 45s on 2026-07-13** since both-in-bed is meant to be the fast path relative to the (now debounced) solo path, not the same order of magnitude. Pre-change config backed up at `/mnt/nas/ai-workspace/documentation/homeassistant/automation_backups/mode_a_arm_master_suite_sleep_posture_20260706_024229.json` (2026-07-06 change) and `/mnt/nas/ai-workspace/homeassistant/backups/pre_sleep_mode_rebuild_20260713T032420Z/` (2026-07-13 change, covers Arm/Disarm/Apply/Under-Bed/Closet-Motion + the group helper).
 
 ### `master_bedroom_occupied` group helper — fixed manually 2026-07-13
-Bathroom member repointed `binary_sensor.master_bathroom_occupancy` → `binary_sensor.master_bathroom_presence` (root cause of the 2026-07-12 false-arm incident; the Matter sensor chatters continuously per live history, presence sensor holds state cleanly). Done via Settings > Devices & Services > Helpers, since group helper config entries have no REST write endpoint (`GET /api/config/config_entries/entry/<id>` returns 405 — options-flow/frontend only).
+Bathroom member repointed `binary_sensor.master_bath_occupancy` → `binary_sensor.master_bathroom_presence` (root cause of the 2026-07-12 false-arm incident; the Matter sensor chatters continuously per live history, presence sensor holds state cleanly). Done via Settings > Devices & Services > Helpers, since group helper config entries have no REST write endpoint (`GET /api/config/config_entries/entry/<id>` returns 405 — options-flow/frontend only).
 
-**Second latent bug found and fixed in the same edit**: the bedroom-motion member had been `binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_5` — docs-labeled "Master Bedroom" but actually a zone of the `fp2_0d3d` device, which is the **family room/downstairs** FP2 sensor (other zones: Family Room, Laundry Room, Stairs, Tia's Office, Walkway). The suite-occupied signal had been reading a downstairs zone this whole time, not the bedroom's own sensor. Now uses all three zones of `fp2_6685`, the actual master-bedroom-dedicated FP2 device: `presence_sensor_fp2_6685_presence_sensor_{1,2,3}` ("Master Bed Presence All" / "Master Bed Presence" / "Master Bedroom Presence Walkways").
+**Second latent bug found and fixed in the same edit**: the bedroom-motion member had been `binary_sensor.family_room_fp2_master_bedroom` — docs-labeled "Master Bedroom" but actually a zone of the `fp2_0d3d` device, which is the **family room/downstairs** FP2 sensor (other zones: Family Room, Laundry Room, Stairs, Tia's Office, Walkway). The suite-occupied signal had been reading a downstairs zone this whole time, not the bedroom's own sensor. Now uses all three zones of `fp2_6685`, the actual master-bedroom-dedicated FP2 device: `presence_sensor_fp2_6685_presence_sensor_{1,2,3}` ("Master Bed Presence All" / "Master Bed Presence" / "Master Bedroom Presence Walkways").
 
 Group logic confirmed OR (`"all": false`, checked directly against `/homeassistant/.storage/core.config_entries` via SSH 2026-07-14) — not AND, occupancy detection intact.
 
-**Membership has moved twice** — as of 2026-07-14 it's `binary_sensor.closet_motion_motion`, `binary_sensor.presence_sensor_fp2_6685_presence_sensor_{2,3}`, `binary_sensor.master_bathroom_presence`, `binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_5`. Note `fp2_6685_presence_sensor_1` ("Master Bed Presence All") has been dropped and `fp2_0d3d_presence_sensor_5` (the downstairs/family-room-device zone flagged above as mislabeled) is back in — unclear if intentional. Re-verify membership before trusting this note; it drifts.
+**Membership has moved twice** — as of 2026-07-14 it's `binary_sensor.master_closet_motion`, `binary_sensor.presence_sensor_fp2_6685_presence_sensor_{2,3}`, `binary_sensor.master_bathroom_presence`, `binary_sensor.family_room_fp2_master_bedroom`. Note `fp2_6685_presence_sensor_1` ("Master Bed Presence All") has been dropped and `fp2_0d3d_presence_sensor_5` (the downstairs/family-room-device zone flagged above as mislabeled) is back in — unclear if intentional. Re-verify membership before trusting this note; it drifts.
 
 ### Bed presence sensor
 Device: `device_tracker.bed_presence_2c0bd4` (ElevatedSens, IP 192.168.255.17, VLAN 500), response speed: Slow
-- Left side (Tia): `sensor.master_bedroom_bed_presence_left_pressure` — occupied: 45%, trigger: 43.75%, unoccupied: 40%
-- Right side (Caleb): `sensor.master_bedroom_bed_presence_right_pressure` — occupied: 87%, trigger: 81.5%, **unoccupied: 50%** (lowered from 65% 2026-05-16 to prevent false negatives from position shifts)
-- Calibration buttons: `button.master_bedroom_bed_presence_calibrate_{left,right}_{occupied,unoccupied}`
+- Left side (Tia): `sensor.master_bedroom_bed_tia_side_pressure` — occupied: 45%, trigger: 43.75%, unoccupied: 40%
+- Right side (Caleb): `sensor.master_bedroom_bed_caleb_side_pressure` — occupied: 87%, trigger: 81.5%, **unoccupied: 50%** (lowered from 65% 2026-05-16 to prevent false negatives from position shifts)
+- Calibration buttons: `button.master_bedroom_bed_{tia,caleb}_side_calibrate_{occupied,unoccupied}`; thresholds `number.master_bedroom_bed_{tia,caleb}_side_{trigger,occupied,unoccupied}_pressure` (left = Tia, right = Caleb)
 - `binary_sensor.master_bed_{caleb,tia,anyone,both}_in_bed` — named wrappers; `master_bedroom_bed_presence_bed_occupied_{left,right,either,both}` — raw device sensors
 
 ### Revert instructions (2026-07-13 rebuild)
@@ -243,7 +243,7 @@ Pre-rebuild config for every automation touched (Arm/Disarm/Apply/Exit, Under Be
 
 ## HVAC System
 
-**Adaptive HVAC v0.4.1** — custom HACS integration (`custom_components/adaptive_hvac/`). Old 13-automation YAML system is fully replaced. Do not re-enable old automations. Full docs: `custom_components/adaptive_hvac/README.md` + `CHANGELOG.md`.
+**Adaptive HVAC v0.4.2** — custom HACS integration (`custom_components/adaptive_hvac/`). Old 13-automation YAML system is fully replaced. Do not re-enable old automations. Full docs: `custom_components/adaptive_hvac/README.md` + `CHANGELOG.md`.
 
 ### Architecture
 - **System entry** — owns the thermostat, reads weather, dispatches heat/cool/off
@@ -268,17 +268,17 @@ Pre-rebuild config for every automation touched (Arm/Disarm/Apply/Exit, Under Be
 ### Zones (v0.3.33) — Garage removed 2026-07-26, see below
 | Zone | Status sensor | Temp sensor | Auto switch | Fan lock switch |
 |------|--------------|-------------|-------------|-----------------|
-| Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.caleb_s_office_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
-| Tia's Office | `sensor.tias_office_hvac_status` | `sensor.tias_office_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
-| Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.meter_pro_2689_temperature` | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
+| Caleb's Office | `sensor.calebs_office_hvac_status` | `sensor.office_caleb_hygrometer_temperature` | `switch.adaptive_hvac_calebs_office_auto_2` | `switch.adaptive_hvac_calebs_office_fan_locked` |
+| Tia's Office | `sensor.tias_office_hvac_status` | `sensor.office_tia_hygrometer_temperature` | `switch.adaptive_hvac_tias_office_auto` | `switch.adaptive_hvac_tias_office_fan_locked` |
+| Master Bedroom | `sensor.master_bedroom_hvac_status` | `sensor.master_bedroom_hygrometer_temperature` | `switch.adaptive_hvac_master_bedroom_auto` | `switch.adaptive_hvac_master_bedroom_fan_locked` |
 | Living Room | `sensor.living_room_hvac_status` | `sensor.downstairs_thermostat_temperature` | `switch.adaptive_hvac_living_room_auto` | `switch.adaptive_hvac_living_room_fan_locked` |
 
 ### Garage fan control — plain automation, not an HVAC zone
 Removed from Adaptive HVAC entirely (2026-07-26) — it was `affects_thermostat: false` anyway, so this only changes fan control, not AC/heat behavior. Garage fans needed compound logic (door state OR sustained occupancy+heat) the integration's single-threshold-per-zone model doesn't fit; see README's "Zones with compound fan logic" section for the general pattern this is the worked example of.
 
-- `automation.garage_fans_door_occupancy_cooling` (`automations/garage/garage_fans_door_occupancy_cooling.json`) — fans on when both `cover.lexus_garage_door` + `cover.pony_garage_door` are open, OR `binary_sensor.garage_occupied` has been on 10+ min AND `sensor.garage_hygrometer_temperature_2` ≥ `input_number.garage_fan_hot_threshold` (75°F default, dashboard-adjustable slider). Off otherwise. Controls `fan.garage_fans` (confirmed same physical device as `switch.garage_fans`, just presented as a fan entity).
+- `automation.garage_fans_door_occupancy_cooling` (`automations/garage/garage_fans_door_occupancy_cooling.json`) — fans on when both `cover.garage_door_lexus` + `cover.garage_door_pony` are open, OR `binary_sensor.garage_occupied` has been on 10+ min AND `sensor.garage_hygrometer_temperature` ≥ `input_number.garage_fan_hot_threshold` (75°F default, dashboard-adjustable slider). Off otherwise. Controls `fan.garage_fans` (confirmed same physical device as `switch.garage_fans`, just presented as a fan entity).
 - Replaced `garage_fan_door_ventilation` (deleted) — that one only ran 6am–9am, had no occupancy branch, and gated on a legacy `input_boolean.fan_user_claimed_garage` helper left over from before the integration got native fan lock (v0.3.6). It was still live and fighting the new automation over the same fans until found and removed.
-- Garage temp/humidity (`sensor.garage_hygrometer_temperature_2`/`_humidity_2`) still shown on the separate `dashboard_temperatures` dashboard — unrelated to Adaptive HVAC, unaffected by the zone removal.
+- Garage temp/humidity (`sensor.garage_hygrometer_temperature`/`_humidity_2`) still shown on the separate `dashboard_temperatures` dashboard — unrelated to Adaptive HVAC, unaffected by the zone removal.
 
 ### Key entities
 - Thermostat: `climate.downstairs_thermostat`

@@ -19,7 +19,7 @@
     {
       "id": "airplay_state",
       "trigger": "state",
-      "entity_id": "media_player.airplay_downstairs"
+      "entity_id": "media_player.central_airplay"
     },
     {
       "id": "lr_atv_state",
@@ -34,13 +34,13 @@
     {
       "id": "no_target",
       "trigger": "template",
-      "value_template": "{% set follow = is_state('input_boolean.living_room_appl_tv_audio_follow_me_mode','on') %} {% set air_state = states('media_player.airplay_downstairs') %} {% set lr_state = states('media_player.living_room_apple_tv') %} {% set air_playing = air_state == 'playing' %} {% set lr_playing = lr_state == 'playing' %} {{ (not air_playing) and (not (follow and lr_playing)) }}\n",
+      "value_template": "{% set follow = is_state('input_boolean.living_room_appl_tv_audio_follow_me_mode','on') %} {% set air_state = states('media_player.central_airplay') %} {% set lr_state = states('media_player.living_room_apple_tv') %} {% set air_playing = air_state == 'playing' %} {% set lr_playing = lr_state == 'playing' %} {{ (not air_playing) and (not (follow and lr_playing)) }}\n",
       "for": "00:05:00"
     }
   ],
   "variables": {
     "follow_me": "input_boolean.living_room_appl_tv_audio_follow_me_mode",
-    "airplay_entity": "media_player.airplay_downstairs",
+    "airplay_entity": "media_player.central_airplay",
     "living_room_atv": "media_player.living_room_apple_tv",
     "source_airplay": "AirPlay",
     "source_appletv": "Apple TV",

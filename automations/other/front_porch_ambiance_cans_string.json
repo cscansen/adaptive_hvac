@@ -12,7 +12,7 @@
         },
         {
             "platform": "state",
-            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+            "entity_id": "binary_sensor.front_porch_presence_still_target",
             "to": "on",
             "for": "00:01:00",
             "id": "occupied_on"
@@ -32,7 +32,7 @@
         },
         {
             "platform": "state",
-            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+            "entity_id": "binary_sensor.front_porch_presence_still_target",
             "to": "off",
             "for": "00:10:00",
             "id": "occupied_off"
@@ -54,7 +54,7 @@
                         },
                         {
                             "condition": "state",
-                            "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+                            "entity_id": "binary_sensor.front_porch_presence_still_target",
                             "state": "off"
                         }
                     ],
@@ -62,8 +62,8 @@
                         {
                             "target": {
                                 "entity_id": [
-                                    "light.front_cans",
-                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                    "light.front_porch_cans",
+                                    "switch.front_porch_string_lights"
                                 ]
                             },
                             "action": "homeassistant.turn_off"
@@ -87,7 +87,7 @@
                                 },
                                 {
                                     "condition": "state",
-                                    "entity_id": "binary_sensor.front_porch_front_porch_presence_still_target",
+                                    "entity_id": "binary_sensor.front_porch_presence_still_target",
                                     "state": "on",
                                     "for": "00:01:00"
                                 }
@@ -98,8 +98,8 @@
                         {
                             "target": {
                                 "entity_id": [
-                                    "light.front_cans",
-                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                    "light.front_porch_cans",
+                                    "switch.front_porch_string_lights"
                                 ]
                             },
                             "action": "homeassistant.turn_on"
@@ -122,8 +122,8 @@
                         {
                             "target": {
                                 "entity_id": [
-                                    "light.front_cans",
-                                    "switch.smart_switch_24100955171104572001c4e7ae0ca68b_outlet_3"
+                                    "light.front_porch_cans",
+                                    "switch.front_porch_string_lights"
                                 ]
                             },
                             "action": "homeassistant.turn_on"

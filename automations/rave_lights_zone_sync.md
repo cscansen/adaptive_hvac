@@ -6,8 +6,8 @@ Two automations keep the Govee Rave lights in sync with their HTD audio zones:
 
 | Light | Entity | Zone | Volume cover |
 |-------|--------|------|--------------|
-| Living Room Rave | `light.h610a` | Main Floor (`media_player.main_floor`) | `cover.volume_main_floor` |
-| Family Room Rave | `light.h610a_2` | Second Floor (`media_player.second_floor`) | `cover.volume_second_floor` |
+| Living Room Rave | `light.living_room_rave` | Main Floor (`media_player.main_floor`) | `cover.volume_main_floor` |
+| Family Room Rave | `light.family_room_rave` | Second Floor (`media_player.second_floor`) | `cover.volume_second_floor` |
 
 ## Behavior
 

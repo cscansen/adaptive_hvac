@@ -6,13 +6,13 @@
   "triggers": [
     {
       "trigger": "template",
-      "value_template": "{{ (states('sensor.caleb_s_office_hygrometer_temperature') | float(0) - states('sensor.downstairs_thermostat_temperature') | float(0)) | abs >= 5 }}",
+      "value_template": "{{ (states('sensor.office_caleb_hygrometer_temperature') | float(0) - states('sensor.downstairs_thermostat_temperature') | float(0)) | abs >= 5 }}",
       "for": "00:05:00",
       "id": "delta_high"
     },
     {
       "trigger": "template",
-      "value_template": "{{ (states('sensor.caleb_s_office_hygrometer_temperature') | float(0) - states('sensor.downstairs_thermostat_temperature') | float(0)) | abs < 3 }}",
+      "value_template": "{{ (states('sensor.office_caleb_hygrometer_temperature') | float(0) - states('sensor.downstairs_thermostat_temperature') | float(0)) | abs < 3 }}",
       "for": "00:05:00",
       "id": "delta_low"
     }
@@ -20,7 +20,7 @@
   "conditions": [
     {"condition": "state", "entity_id": "input_boolean.hvac_manual_override", "state": "off"},
     {"condition": "not", "conditions": [
-      {"condition": "state", "entity_id": "sensor.caleb_s_office_hygrometer_temperature", "state": ["unavailable", "unknown"]}
+      {"condition": "state", "entity_id": "sensor.office_caleb_hygrometer_temperature", "state": ["unavailable", "unknown"]}
     ]}
   ],
   "actions": [
@@ -35,16 +35,16 @@
                   "conditions": [
                     {
                       "condition": "template",
-                      "value_template": "{{ states('sensor.caleb_s_office_hygrometer_temperature') | float(0) >= states('sensor.downstairs_thermostat_temperature') | float(0) + 5 }}"
+                      "value_template": "{{ states('sensor.office_caleb_hygrometer_temperature') | float(0) >= states('sensor.downstairs_thermostat_temperature') | float(0) + 5 }}"
                     }
                   ],
                   "sequence": [
-                    {"action": "fan.turn_on", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}, "data": {"percentage": 50}}
+                    {"action": "fan.turn_on", "target": {"entity_id": ["fan.office_caleb_ceiling_fan", "fan.office_tia_ceiling_fan", "fan.family_room_ceiling_fan"]}, "data": {"percentage": 50}}
                   ]
                 }
               ],
               "default": [
-                {"action": "fan.turn_on", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}, "data": {"percentage": 33}}
+                {"action": "fan.turn_on", "target": {"entity_id": ["fan.office_caleb_ceiling_fan", "fan.office_tia_ceiling_fan", "fan.family_room_ceiling_fan"]}, "data": {"percentage": 33}}
               ]
             },
             {
@@ -60,7 +60,7 @@
         {
           "conditions": [{"condition": "trigger", "id": "delta_low"}],
           "sequence": [
-            {"action": "fan.turn_off", "target": {"entity_id": ["fan.caleb_office_ceiling", "fan.tia_office_ceiling_fan", "fan.fan"]}},
+            {"action": "fan.turn_off", "target": {"entity_id": ["fan.office_caleb_ceiling_fan", "fan.office_tia_ceiling_fan", "fan.family_room_ceiling_fan"]}},
             {
               "if": [
                 {"condition": "state", "entity_id": "climate.downstairs_thermostat", "state": "off"}

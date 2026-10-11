@@ -12,7 +12,7 @@
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "below": 65,
             "for": "00:05:00",
             "id": "upstairs_cold"
@@ -25,20 +25,20 @@
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+            "entity_id": "sensor.office_caleb_hygrometer_temperature",
             "below": 50,
             "id": "upstairs_emergency"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.meter_pro_2689_temperature",
+            "entity_id": "sensor.master_bedroom_hygrometer_temperature",
             "below": 65,
             "for": "00:05:00",
             "id": "master_bedroom_cold"
         },
         {
             "trigger": "numeric_state",
-            "entity_id": "sensor.meter_pro_2689_temperature",
+            "entity_id": "sensor.master_bedroom_hygrometer_temperature",
             "below": 45,
             "id": "master_bedroom_emergency"
         }
@@ -54,7 +54,7 @@
             "conditions": [
                 {
                     "condition": "state",
-                    "entity_id": "sensor.caleb_s_office_hygrometer_temperature",
+                    "entity_id": "sensor.office_caleb_hygrometer_temperature",
                     "state": [
                         "unavailable",
                         "unknown"
@@ -101,7 +101,7 @@
                             "conditions": [
                                 {
                                     "condition": "template",
-                                    "value_template": "{{ states('input_select.hvac_season') == 'summer' and states('sensor.downstairs_thermostat_temperature') | float(100) > 44.9 and states('sensor.meter_pro_2689_temperature') | float(100) > 44.9 }}"
+                                    "value_template": "{{ states('input_select.hvac_season') == 'summer' and states('sensor.downstairs_thermostat_temperature') | float(100) > 44.9 and states('sensor.master_bedroom_hygrometer_temperature') | float(100) > 44.9 }}"
                                 }
                             ]
                         }

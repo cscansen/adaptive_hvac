@@ -86,13 +86,13 @@
 - binary_sensor:
     - name: "Master Bed – Caleb In Bed"
       unique_id: master_bed_caleb_in_bed
-      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_right', 'on') }}"
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_caleb_side', 'on') }}"
       delay_on: "00:00:05"
       delay_off: "00:01:00"
 
     - name: "Master Bed – Tia In Bed"
       unique_id: master_bed_tia_in_bed
-      state: "{{ is_state('binary_sensor.master_bedroom_bed_presence_bed_occupied_left', 'on') }}"
+      state: "{{ is_state('binary_sensor.master_bedroom_bed_tia_side', 'on') }}"
       delay_on: "00:00:05"
       delay_off: "00:01:00"
 
@@ -115,18 +115,18 @@
       device_class: temperature
       state_class: measurement
       state: |
-        {% set caleb = states("sensor.caleb_s_office_hygrometer_temperature") | float(0) %}
-        {% set tia = states("sensor.tias_office_hygrometer_temperature") | float(0) %}
-        {% set master = states("sensor.meter_pro_2689_temperature") | float(0) %}
+        {% set caleb = states("sensor.office_caleb_hygrometer_temperature") | float(0) %}
+        {% set tia = states("sensor.office_tia_hygrometer_temperature") | float(0) %}
+        {% set master = states("sensor.master_bedroom_hygrometer_temperature") | float(0) %}
         {% if caleb > 0 and tia > 0 and master > 0 %}
           {{ ((caleb + tia + master) / 3) | round(2) }}
         {% else %}
           unknown
         {% endif %}
       availability: |
-        {{ states("sensor.caleb_s_office_hygrometer_temperature") not in ["unavailable","unknown"]
-           and states("sensor.tias_office_hygrometer_temperature") not in ["unavailable","unknown"]
-           and states("sensor.meter_pro_2689_temperature") not in ["unavailable","unknown"] }}
+        {{ states("sensor.office_caleb_hygrometer_temperature") not in ["unavailable","unknown"]
+           and states("sensor.office_tia_hygrometer_temperature") not in ["unavailable","unknown"]
+           and states("sensor.master_bedroom_hygrometer_temperature") not in ["unavailable","unknown"] }}
 
 # =========================
 # Thermostat Fan State — text sensor for history graph
@@ -153,7 +153,7 @@
       unique_id: front_porch_swings_occupied
       device_class: occupancy
       state: >-
-        {% set g2 = states('sensor.front_porch_front_porch_presence_g2_still_energy') | float(0) %}
+        {% set g2 = states('sensor.front_porch_presence_g2_still_energy') | float(0) %}
         {% set stoop_occupied = is_state('binary_sensor.front_porch_stoop_occupied', 'on') %}
         {% set windy = state_attr('weather.home', 'wind_speed') | float(0) >= 12 %}
         {{ g2 > 75 and not stoop_occupied and not windy }}
@@ -213,7 +213,7 @@
       unique_id: gazebo_occupied_wind_gated
       device_class: occupancy
       state: >-
-        {% set still_energy = states('sensor.gazebo_presence_sensor_still_energy') | float(0) %}
+        {% set still_energy = states('sensor.gazebo_presence_still_energy') | float(0) %}
         {% set occupied = still_energy > 40 %}
         {% set windy_night = state_attr('weather.home', 'wind_speed') | float(0) >= 12
                              and is_state('sun.sun', 'below_horizon') %}

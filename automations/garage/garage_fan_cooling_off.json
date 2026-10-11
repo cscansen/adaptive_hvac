@@ -5,7 +5,7 @@
   "trigger": [
     {
       "platform": "state",
-      "entity_id": "binary_sensor.garage_presence_sensor_presence",
+      "entity_id": "binary_sensor.garage_presence_presence",
       "to": "off",
       "for": "00:15:00"
     }

@@ -3,10 +3,10 @@
   "alias": "Garage Fans - Door & Occupancy Cooling",
   "description": "Run garage fans when both garage doors are open (cross-ventilation), or when someone has been in the garage 10+ minutes and it's hot. Adaptive HVAC's garage zone auto-control is off; this automation owns fan.garage_fans directly. Replaces garage_fan_door_ventilation (6am-9am only, no occupancy branch, legacy fan_user_claimed_garage gate).",
   "triggers": [
-    {"trigger": "state", "entity_id": ["cover.lexus_garage_door", "cover.pony_garage_door"]},
+    {"trigger": "state", "entity_id": ["cover.garage_door_lexus", "cover.garage_door_pony"]},
     {"trigger": "state", "entity_id": "binary_sensor.garage_occupied", "to": "on", "for": {"minutes": 10}},
     {"trigger": "state", "entity_id": "binary_sensor.garage_occupied", "to": "off"},
-    {"trigger": "numeric_state", "entity_id": "sensor.garage_hygrometer_temperature_2", "above": "input_number.garage_fan_hot_threshold"},
+    {"trigger": "numeric_state", "entity_id": "sensor.garage_hygrometer_temperature", "above": "input_number.garage_fan_hot_threshold"},
     {"trigger": "state", "entity_id": "input_number.garage_fan_hot_threshold"}
   ],
   "conditions": [],
@@ -17,7 +17,7 @@
           "conditions": [
             {
               "condition": "template",
-              "value_template": "{{ (is_state('cover.lexus_garage_door', 'open') and is_state('cover.pony_garage_door', 'open')) or (is_state('binary_sensor.garage_occupied', 'on') and (as_timestamp(now()) - as_timestamp(states.binary_sensor.garage_occupied.last_changed)) >= 600 and (states('sensor.garage_hygrometer_temperature_2') | float(0)) >= (states('input_number.garage_fan_hot_threshold') | float(75))) }}"
+              "value_template": "{{ (is_state('cover.garage_door_lexus', 'open') and is_state('cover.garage_door_pony', 'open')) or (is_state('binary_sensor.garage_occupied', 'on') and (as_timestamp(now()) - as_timestamp(states.binary_sensor.garage_occupied.last_changed)) >= 600 and (states('sensor.garage_hygrometer_temperature') | float(0)) >= (states('input_number.garage_fan_hot_threshold') | float(75))) }}"
             }
           ],
           "sequence": [

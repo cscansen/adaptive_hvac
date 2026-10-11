@@ -12,11 +12,11 @@ Build a whole-home HVAC automation that keeps the house at ~68°F across all sea
 |---|---|---|
 | Only thermostat | `climate.downstairs_thermostat` | Controls whole house HVAC |
 | Master bath thermostat | `climate.bathroom` | Not in scope for main automation |
-| Upstairs temp gate | `sensor.caleb_s_office_hygrometer_temperature` | No actual thermostat in office |
+| Upstairs temp gate | `sensor.office_caleb_hygrometer_temperature` | No actual thermostat in office |
 | Downstairs temp | `sensor.downstairs_thermostat_temperature` | |
 | Outside temp/weather | `weather.home` | Has temp, precip, wind attributes |
-| Upstairs fans (auto) | `fan.caleb_office_ceiling`, `fan.tia_office_ceiling_fan` | |
-| Master fan (excluded) | `fan.master_ceiling_fan` | Managed by Night Mode automation — do not touch |
+| Upstairs fans (auto) | `fan.office_caleb_ceiling_fan`, `fan.office_tia_ceiling_fan` | |
+| Master fan (excluded) | `fan.master_bedroom_ceiling_fan` | Managed by Night Mode automation — do not touch |
 | Main floor fan | `fan.family_room_ceiling_fan` | |
 | Downstairs fan | `fan.living_room_ceiling_fan` | |
 | Caleb occupancy | `binary_sensor.calebs_office_occupancy` | |
@@ -94,7 +94,7 @@ Otherwise (windows not assumed open):
 
 ## Floor Equalization
 
-**Trigger:** `abs(sensor.caleb_s_office_hygrometer_temperature - sensor.downstairs_thermostat_temperature) ≥ 5°F`  
+**Trigger:** `abs(sensor.office_caleb_hygrometer_temperature - sensor.downstairs_thermostat_temperature) ≥ 5°F`  
 **Applies:** year-round (any season, any time)
 
 **When upstairs is HOT relative to downstairs** (office ≥ downstairs + 5°F):
@@ -163,15 +163,15 @@ When conditions flip: resume normal cooling logic automatically.
 **Upstairs:**
 - `binary_sensor.calebs_office_occupancy`
 - `binary_sensor.calebs_office_presence_sensor`
-- `binary_sensor.tias_office_presence_motion`
+- `binary_sensor.office_tia_presence_motion`
 - `binary_sensor.presence_sensor_fp2_6685_presence_sensor_1` (Master bedroom)
-- `binary_sensor.master_bathroom_occupancy`
+- `binary_sensor.master_bath_occupancy`
 
 **Downstairs:**
-- `binary_sensor.presence_sensor_fp2_9699_presence_sensor_1` (Living Room — All Areas)
-- `binary_sensor.presence_sensor_fp2_0d3d_presence_sensor_1` (Family Room — All Areas)
-- `binary_sensor.presence_sensor_fp2_a5e5_presence_sensor_1` (Kitchen — All Areas)
-- `binary_sensor.stairwell_motion_sensor_motion` (Stairwell)
+- `binary_sensor.living_room_fp2_all_areas` (Living Room — All Areas)
+- `binary_sensor.family_room_fp2_all_areas` (Family Room — All Areas)
+- `binary_sensor.kitchen_fp2_all_areas` (Kitchen — All Areas)
+- `binary_sensor.stairs_motion` (Stairwell)
 
 Group strategy: `binary_sensor.upstairs_occupied` and `binary_sensor.downstairs_occupied` as OR groups. Unoccupied = BOTH groups OFF for 8 hrs.
 
@@ -207,7 +207,7 @@ All under group tag `HVAC`, deployed via API POST to `/api/config/automation/con
 
 ## Sensor Failsafe
 
-The office hygrometer (`sensor.caleb_s_office_hygrometer_temperature`) is the sole reliable upstairs sensor. Master bedroom sensor is unreliable (SwitchBot Bluetooth gateway — unstable values). No offset-based fallback — guessing is riskier than pausing.
+The office hygrometer (`sensor.office_caleb_hygrometer_temperature`) is the sole reliable upstairs sensor. Master bedroom sensor is unreliable (SwitchBot Bluetooth gateway — unstable values). No offset-based fallback — guessing is riskier than pausing.
 
 When office sensor goes `unavailable`:
 - Freeze all HVAC automation (no setpoint changes)
@@ -246,7 +246,7 @@ Manual season override: change `input_select.hvac_season` directly from the dash
 ## Humidifier
 
 Whole-house humidifier runs during heat cycles only — not independently controllable. Read-only integration:
-- `sensor.caleb_s_office_hygrometer_humidity` informs summer cooling threshold (> 55% humidity → lower fan trigger from 72°F to 70°F)
+- `sensor.office_caleb_hygrometer_humidity` informs summer cooling threshold (> 55% humidity → lower fan trigger from 72°F to 70°F)
 - No action taken on the humidifier itself in this automation
 
 ---
@@ -256,7 +256,7 @@ Whole-house humidifier runs during heat cycles only — not independently contro
 Electric in-floor radiant heat under tile. Currently schedule-based. Not in scope for Phase 1.
 
 **Future behavior-based design:**
-- Occupied (`binary_sensor.master_bathroom_occupancy` ON) → warm to 72°F
+- Occupied (`binary_sensor.master_bath_occupancy` ON) → warm to 72°F
 - Unoccupied → setback to 60°F or off
 - Tile holds heat well — doesn't need to run constantly
 - Keep fully independent from main HVAC automation
@@ -312,13 +312,13 @@ Key entities to expose:
 Implementation: dedicated automation `hvac_living_room_fan_comfort` that watches living room presence sensors and turns fan off when occupied > 5 min. Takes priority over any equalization or cooling logic that would otherwise turn it on.
 
 Presence sensors for living room:
-- `binary_sensor.presence_sensor_fp2_9699_presence_sensor_5` (Living Room Presence)
-- `binary_sensor.presence_sensor_fp2_a5e5_presence_sensor_4` (Living Room Presence)
+- `binary_sensor.living_room_fp2_living_room` (Living Room Presence)
+- `binary_sensor.kitchen_fp2_living_room` (Living Room Presence)
 
 Fan may run freely when living room is unoccupied.
 
 ### Master Bedroom Fan
-`fan.master_ceiling_fan` — **fully excluded** from all HVAC automation. Managed only by the existing Night Mode automation. Do not touch under any circumstances.
+`fan.master_bedroom_ceiling_fan` — **fully excluded** from all HVAC automation. Managed only by the existing Night Mode automation. Do not touch under any circumstances.
 
 ---
 
@@ -336,7 +336,7 @@ None outstanding.
 | Window logic | Inferred: outside ≤ 70°F + wind < 10 mph + summer → assumed open |
 | Wind threshold | 10 mph |
 | "Hot" threshold | 74°F |
-| Office thermostat | No thermostat — temp sensor `sensor.caleb_s_office_hygrometer_temperature` gates decisions |
+| Office thermostat | No thermostat — temp sensor `sensor.office_caleb_hygrometer_temperature` gates decisions |
 | Unoccupied setback timer | 8 hours no motion |
 | Unoccupied setbacks | AC → 76°F, heat → 62°F |
 | Night mode scope | Winter only (Oct–Mar); heat 62°F until 6am |

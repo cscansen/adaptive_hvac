@@ -3,7 +3,7 @@
     "alias": "Security Lights - Perimeter Loiter Boost",
     "description": "Reactive/energy-saving exterior lighting: turns on the fixture nearest a detected perimeter zone while dark, and off ~10min after all sensors feeding that fixture clear. Front Door Entry Lights stay on the fixed dusk/dawn schedule (security_lights label) unaffected by this automation.",
     "triggers": [
-        {"platform": "state", "entity_id": "binary_sensor.front_door_person_detected_2", "to": "on", "id": "front_door_on"},
+        {"platform": "state", "entity_id": "binary_sensor.front_door_person_detected", "to": "on", "id": "front_door_on"},
         {"platform": "state", "entity_id": "binary_sensor.back_field_person", "to": "on", "id": "back_field_on"},
         {"platform": "state", "entity_id": "binary_sensor.driveway_person_detected", "to": "on", "id": "driveway_on"},
         {"platform": "state", "entity_id": "binary_sensor.yard_west_person_detected", "to": "on", "id": "yard_west_on"},
@@ -18,7 +18,7 @@
             "choose": [
                 {
                     "conditions": [{"condition": "trigger", "id": "front_door_on"}, {"condition": "sun", "after": "sunset"}],
-                    "sequence": [{"target": {"entity_id": "light.front_cans"}, "action": "light.turn_on"}]
+                    "sequence": [{"target": {"entity_id": "light.front_porch_cans"}, "action": "light.turn_on"}]
                 },
                 {
                     "conditions": [{"condition": "trigger", "id": "back_field_on"}, {"condition": "sun", "after": "sunset"}],
@@ -27,20 +27,20 @@
                 {
                     "conditions": [{"condition": "trigger", "id": "driveway_on"}, {"condition": "sun", "after": "sunset"}],
                     "sequence": [
-                        {"target": {"entity_id": "switch.smart_switch_24081901645562550804c4e7ae09855c_outlet"}, "action": "switch.turn_on"},
+                        {"target": {"entity_id": "switch.shed_exterior_light"}, "action": "switch.turn_on"},
                         {"target": {"entity_id": "light.back_field_floodlight"}, "action": "light.turn_on"}
                     ]
                 },
                 {
                     "conditions": [{"condition": "trigger", "id": "yard_west_on"}, {"condition": "sun", "after": "sunset"}],
-                    "sequence": [{"target": {"entity_id": "switch.smart_switch_24081901645562550804c4e7ae09855c_outlet"}, "action": "switch.turn_on"}]
+                    "sequence": [{"target": {"entity_id": "switch.shed_exterior_light"}, "action": "switch.turn_on"}]
                 },
                 {
                     "conditions": [{"condition": "trigger", "id": "yard_east_on"}, {"condition": "sun", "after": "sunset"}],
                     "sequence": [
-                        {"target": {"entity_id": "light.gazebo"}, "action": "light.turn_on"},
-                        {"target": {"entity_id": "switch.smart_switch_24081996533840550804c4e7ae098669_outlet"}, "action": "switch.turn_on"},
-                        {"target": {"entity_id": "light.front_cans"}, "action": "light.turn_on"}
+                        {"target": {"entity_id": "light.gazebo_lights"}, "action": "light.turn_on"},
+                        {"target": {"entity_id": "switch.gazebo_slider_lights"}, "action": "switch.turn_on"},
+                        {"target": {"entity_id": "light.front_porch_cans"}, "action": "light.turn_on"}
                     ]
                 },
                 {
@@ -48,7 +48,7 @@
                     "sequence": [
                         {
                             "if": [{"condition": "state", "entity_id": "binary_sensor.yard_west_person_detected", "state": "off"}],
-                            "then": [{"target": {"entity_id": "switch.smart_switch_24081901645562550804c4e7ae09855c_outlet"}, "action": "switch.turn_off"}]
+                            "then": [{"target": {"entity_id": "switch.shed_exterior_light"}, "action": "switch.turn_off"}]
                         },
                         {
                             "if": [{"condition": "state", "entity_id": "binary_sensor.back_field_person", "state": "off"}],
@@ -61,7 +61,7 @@
                     "sequence": [
                         {
                             "if": [{"condition": "state", "entity_id": "binary_sensor.driveway_person_detected", "state": "off"}],
-                            "then": [{"target": {"entity_id": "switch.smart_switch_24081901645562550804c4e7ae09855c_outlet"}, "action": "switch.turn_off"}]
+                            "then": [{"target": {"entity_id": "switch.shed_exterior_light"}, "action": "switch.turn_off"}]
                         }
                     ]
                 },
@@ -77,8 +77,8 @@
                 {
                     "conditions": [{"condition": "trigger", "id": "yard_east_off"}],
                     "sequence": [
-                        {"target": {"entity_id": "light.gazebo"}, "action": "light.turn_off"},
-                        {"target": {"entity_id": "switch.smart_switch_24081996533840550804c4e7ae098669_outlet"}, "action": "switch.turn_off"}
+                        {"target": {"entity_id": "light.gazebo_lights"}, "action": "light.turn_off"},
+                        {"target": {"entity_id": "switch.gazebo_slider_lights"}, "action": "switch.turn_off"}
                     ]
                 }
             ]

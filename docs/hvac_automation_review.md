@@ -29,7 +29,7 @@ Master bedroom fan excluded (managed by Night Mode: Master Bedroom Fan Control)
 | Metric | Target | How to Check |
 |---|---|---|
 | AC hours per hot day (outside > 82°F) | < 4 hrs/day average | HA energy dashboard or thermostat history |
-| Office temp during occupied hours | ≤ 76°F without AC running | `sensor.caleb_s_office_hygrometer_temperature` history |
+| Office temp during occupied hours | ≤ 76°F without AC running | `sensor.office_caleb_hygrometer_temperature` history |
 | Passive cooling success rate | Office drops ≥ 1°F OR upstairs/downstairs delta shrinks ≥ 1°F within 30 min, at least 60% of triggers | Automation trace logs |
 | Manual AC overrides | < 3 per month | `input_boolean.hvac_manual_override` history |
 | False AC activations | 0 — AC should never run when outside < inside | Verify in automation traces |
@@ -89,11 +89,11 @@ Before calling something broken, try adjusting these first:
 
 | Role | Entity |
 |---|---|
-| Upstairs temp (primary) | `sensor.caleb_s_office_hygrometer_temperature` |
+| Upstairs temp (primary) | `sensor.office_caleb_hygrometer_temperature` |
 | Downstairs temp | `sensor.downstairs_thermostat_temperature` |
 | Outside temp | `weather.home` (temperature attribute) |
 | Thermostat | `climate.downstairs_thermostat` |
-| Upstairs fans | `fan.caleb_office_ceiling`, `fan.tia_office_ceiling_fan` |
+| Upstairs fans | `fan.office_caleb_ceiling_fan`, `fan.office_tia_ceiling_fan` |
 | Night mode | `input_boolean.master_suite_sleep_posture` |
 | Manual override flag | `input_boolean.hvac_manual_override` |
 | Managed cooling flag | `input_boolean.hvac_managed_cooling` |

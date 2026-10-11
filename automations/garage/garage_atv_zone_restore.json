@@ -21,7 +21,7 @@
     {
       "service": "switch.turn_off",
       "target": {
-        "entity_id": "switch.extra1"
+        "entity_id": "switch.garage_amp"
       }
     },
     {
