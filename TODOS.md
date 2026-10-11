@@ -1,5 +1,86 @@
 # Home Assistant — Deferred TODOs
 
+## Naming cleanup (started 2026-10-10) — IN PROGRESS
+
+Convention: areas "Group - Specific" (Office - Caleb, Master - Bath, Yard - East, Crawl Space - IT); devices
+"<Area> <Thing>"; straight apostrophes. Log in infrastructure/CHANGES.md.
+- [x] Batch 1 — areas (renamed + aliases; Tech Closet merged; Crawl Space - Water Closet created)
+- [x] Batch 2a — Office - Caleb/Tia + Master device names + entity display overrides
+- [x] Batch 2b — Living/Family/Kitchen/Dining (+ FP2s/zones, WiiM×3, THEUNIT; retired MSS110s deleted)
+- [x] Batch 2c — outdoor/utility areas, no-area devices, Eve → Roof, MyZone6–12 + SwitchBot hub disabled
+- [x] Yardian "Drip/Garden" zone → Yard - West (area id `yard`; verified 2026-10-10)
+      + ~20 devices with no area (Hubitat hygrometers/Garage Fans/Yard Middle Moisture, HVAC zone devices, hubs)
+- [x] Step 1 — 50 automation-referenced entity IDs renamed + all refs rewritten (2026-10-10, see CHANGES.md)
+- [x] Step 2 — 7 HomeKit-bridged renames done 2026-10-10. Bridge include lists were rewritten in the same stop/start,
+      accessory IDs were verified unchanged, and every bridge's accessory count held.
+- [x] Step 3 — 194 primary IDs on renamed devices + Matter eve dupes disabled (2026-10-10, see CHANGES.md)
+- [x] Step 4 — 610 config/diagnostic IDs + bed Tia/Caleb side labels, live, no restart (2026-10-10, see CHANGES.md).
+      Left as-is: UniFi client trackers, Spook system sensors, Yardian zone flags (no entity name), OneDrive `_2` dupes.
+- [ ] Leviton master bath dimmer (homekit_controller `LEVDS-MotDim-DC8A`) in setup_retry / unavailable since ≤12:00
+      UTC 10-10 — pre-existing, needs re-pair or a power-cycle
+- [ ] WiiM Pro is in HA via 3 integrations (wiim, linkplay, cast) — pick one during batch 3
+- [ ] Decide: Bond `light.light` (unavailable, unreferenced) — remove in Bond app
+- [x] MSS560 dimmers re-added to meross_lan (they'd been ignored) and given the original light IDs; HomeKit twins
+      renamed `*_homekit` and their entries disabled (2026-10-10). Delete the disabled twins once the Meross ones prove out.
+- [ ] Default dashboard `strategy.areas.order` has stale ids (tech_closet, guest_bathroom, work_bench, home_gym)
+
+## Adaptive HVAC — "No zone data available" for ~3 min after every HA start — PENDING (seen 2026-10-10)
+
+- After the 14:40 UTC restart, `sensor.adaptive_hvac_status` read "No zone data available" 14:41:09 → 14:44:09, then
+  recovered on its own (the user saw it as "HVAC completely broke"). Zone coordinators apparently don't populate until
+  their first scheduled refresh. Fix: run `async_config_entry_first_refresh()` / an immediate zone refresh at setup, or
+  have the system coordinator wait for the zones before computing status.
+- Same window: `sensor.adaptive_hvac_season` reads **summer** for ~3 min after every start, then goes back to winter (seen
+  4× on 10-10). Probably defaults to summer before data arrives. Could drive the wrong heat/cool decision if the system
+  is active at boot, so make the default "unknown/hold last" (RestoreEntity) instead of summer.
+
+## Opus review follow-ups (2026-10-09) — HIGH
+
+- [x] **Off-site backups failing since 10-09** — OneDrive Personal quota full. FIXED 2026-10-09:
+      OneDrive for Business (Entra app 65b09b13…, see infrastructure/CHANGES.md) is now the
+      off-site agent (949 GiB free); Personal removed from create list.
+- [x] 10-10 backup to OneDrive for Business confirmed by user. Client secret expires ~2028-10 — rotate before.
+- [x] Backup encryption key rotated by user 2026-10-10.
+- [~] **Presence → Apple Home** (2026-10-09): `input_boolean.caleb_home_apple` / `tia_home_apple`
+      exposed on HASS Bridge:21064; user created 4 Home app People Arrive/Leave automations;
+      `binary_sensor.caleb_home`/`tia_home` templates now read only those booleans (backup
+      `templates.yaml.bak.*_apple_presence`). **Verify** on the next real leave/arrive that the
+      boolean flips. Deer deterrents (`yard_*_deer_deterrent_night`, still disabled for season)
+      switched from `person.*: not_home` to `binary_sensor.nobody_home: on` (2026-10-10). No
+      `person.*` / `group.people` refs remain in automations/scripts/templates.
+- [x] HASS Bridge:21064 now explicit include (was `include_domains: [input_boolean]`) —
+      dropped christmas_time, master_bath_dimmer_sync, lightshow_running from HomeKit (2026-10-09).
+- [x] **Auto-lock dead trigger** — FIXED 2026-10-10: `automation 1771124383892` nobody_home
+      trigger repointed from nonexistent `group.people` to `binary_sensor.nobody_home` off→on
+      (Apple-driven). Rides on the presence verification above.
+- [x] **Duplicate automations** — FIXED 2026-10-09: Evening Lights ON (anchor) / OFF (3× literal)
+      deduped by text surgery, empty "Back Field Animal" stub removed; 84 unique, semantically
+      verified unchanged. Backup `automations.yaml.bak.*_dedupe`. Likely mechanism: blocks were
+      literally triplicated after 08-04, then an API/UI save of the ON one replaced every same-id
+      entry with one object → PyYAML emitted `&id001`/`*id001`.
+- [x] `from: on` added to *TV Backlight - Follow TV Power* and *Garage - Stop ATV when amp
+      turns off* (2026-10-09).
+- [x] LocalTuya cleanup (2026-10-09): 9 dead/retired devices removed (Dimmer Switch 2/3/4, Lamp, Dining Room
+      Lamps, Entry Lights, Upper Cabinet 1/2/3) + switch_as_x "Caleb's Office - Lamp" wrapper auto-removed.
+      Root cause of the noise: DHCP had reassigned their saved IPs (.149 shared by Dimmer 3 + Desk → wrong-key
+      errors; .228 → an iPad). Full configs incl. local_keys archived to
+      `devbox-shared/secrets/localtuya-retired-2026-10-09.json.age` (decrypt: `age -d -i ~/.config/age/key.txt`).
+      11 devices remain. Christmas Trees stays (seasonal, unplugged → expected connect warnings).
+- [x] LocalTuya "DPS mismatch" — CLOSED 2026-10-10, mapping was never wrong. Desk (Amazon Basics 12V RGBWW,
+      v3.3) + Flag use std Tuya v2 light DPS: 20 power, 21 mode, 22 bright 10–1000, 23 CT 0–1000, 24 HSV hex.
+      "Unknown DPS 21" / failed `{22: 1000}` writes were Dimmer Switch 3 sharing `.149`; stopped when it was
+      removed (last warning 07:28:50). Live test on/50%/3000K/red/100%/off: no errors, user confirmed.
+      Cosmetic only: HA shows CT kelvin = None and a 2000–6535 K range. If IPs drift again → DHCP reservations.
+- [x] Deleted all 9 `/homeassistant/configuration.yaml.bak*` (May 15 → Oct 9, every one held the
+      plaintext Schluter password) — user-approved 2026-10-10.
+- [x] Schluter password rotated 2026-10-11 (user) — the copies in the deleted backups are dead.
+- [x] Spook repairs cleared 2026-10-10 (5 → 0): area humidity for Garage/Living Room/Master Bedroom
+      repointed to live sensors; WLED retired → `light.eve_lights_wled` group deleted + stripped from 17
+      holiday scenes and Evening Lights ON/OFF; orphaned FP2 light-level stats cleared. Adaptive HVAC
+      unaffected (zone options override the stale setup `data` refs; 36/36 entities healthy).
+- [ ] Irrigation (next season): `_fetch_weather` uses forecast[0] only — can't skip
+      watering ahead of tomorrow's rain.
+
 ## Irrigation v0.8.0 — Deployment & Cutover — HIGH (branch pushed 2026-08-10)
 
 Branch `v0.8.0-interval-model-and-cooling` is pushed to
@@ -38,10 +119,10 @@ temperature per zone instead of one clock for all zones.
 
 | Zone | Temp sensor | Refill | Fill | Cool at | Max dur | Fallback |
 |---|---|---|---|---|---|---|
-| Yard West | `sensor.back_yard_soil_sensor_temperature` | 45 | 70 | 93°F | 60 | 45 |
-| Yard Middle | `sensor.yard_middle_moisture_temperature` | 45 | 66 | 100°F | 60 | 45 |
-| Front Yard | `sensor.front_yard_soil_sensor_temperature` | 48 | 55 | 95°F | 45 | 35 |
-| Yard East | `sensor.east_yard_soil_sensor_temperature` | 52 | 62 | 95°F | 45 | 35 |
+| Yard West | `sensor.yard_west_soil_sensor_temperature` | 45 | 70 | 93°F | 60 | 45 |
+| Yard Middle | `sensor.yard_west_middle_soil_sensor_temperature` | 45 | 66 | 100°F | 60 | 45 |
+| Front Yard | `sensor.yard_front_soil_sensor_temperature` | 48 | 55 | 95°F | 45 | 35 |
+| Yard East | `sensor.yard_east_soil_sensor_temperature` | 52 | 62 | 95°F | 45 | 35 |
 
 West's refill is deliberately **above** the 40 default: that turf is heat-stressed, so it
 should water sooner, not later. Do not lower it until soil temperatures drop.
@@ -171,7 +252,7 @@ furnace runs, and that is a comfort/cost call, not a code call.
   case; do **not** delete the code, the unit tests are what document the intent.
 
 **Verification recipe (works any time of year):** flip `select.adaptive_hvac_season_override` to
-`winter`, override the outdoor sensor via `POST /api/states/sensor.outside_temp_temperature`, then
+`winter`, override the outdoor sensor via `POST /api/states/sensor.outside_temperature`, then
 `POST /api/services/adaptive_hvac/force_evaluate` and read `blocked_reason` off
 `binary_sensor.adaptive_hvac_heating_blocked`. **Caveat:** toggling the season override walks
 `_reset_setpoints_for_season_change`, which clears setpoint overrides — record
@@ -208,7 +289,7 @@ New `dashboard-security` Lovelace dashboard (2026-07-19) shows per-camera `pictu
 **Gap:** none of the yard gates (Alley, Yard East, Yard West, Driveway, Back Field, Gazebo slider) have a physical contact sensor today — those cards currently only show camera motion/CO detection, no open/closed state or lock button.
 
 **Install priority (user-set, 2026-07-19):**
-1. [ ] Front Door — supplement existing `lock.front_door_lock`/actuator with a dedicated contact sensor
+1. [ ] Front Door — supplement existing `lock.front_porch_door_lock`/actuator with a dedicated contact sensor
 2. [ ] Gazebo / Slider
 3. [ ] Yard East
 4. [ ] Yard West
@@ -259,7 +340,7 @@ Currently the summer watering window is enforced globally (trigger at 5:30am, re
 
 `sensor.middle_yard_soil_humidity` is unavailable (physical sensor dead/offline). Yard Middle zone (`adaptive_irrigation`) was reading from it → `sensor.adaptive_irrigation_yard_middle_moisture: unknown`.
 
-**Fix applied:** Updated Yard Middle config entry options via `/api/config/config_entries/options/flow` to use `sensor.east_yard_soil_sensor_humidity` + `sensor.back_yard_soil_sensor_humidity` (average of East + West). Options are saved correctly in `core.config_entries`.
+**Fix applied:** Updated Yard Middle config entry options via `/api/config/config_entries/options/flow` to use `sensor.yard_east_soil_moisture` + `sensor.yard_west_soil_moisture` (average of East + West). Options are saved correctly in `core.config_entries`.
 
 **Current blocker:** After options flow triggered the update_listener reload, a subsequent call to `homeassistant/reload_config_entry` service caused a second HA-managed reload that left all Yard Middle entities `unavailable`. The update_listener path (our custom `async_reload_entry`) works; the HA service-managed reload fails silently (entities unavailable, entry state shows `loaded`).
 
@@ -269,7 +350,7 @@ Currently the summer watering window is enforced globally (trigger at 5:30am, re
 - [ ] Investigate root cause: why does HA-managed reload fail for Yard Middle but not East/West? Likely `async_config_entry_first_refresh()` timing issue — consider wrapping first_refresh exceptions in `async_setup_entry` with retry logic
 - [ ] Long-term: replace unavailable `sensor.middle_yard_soil_humidity` with a template sensor that computes E+W average, so the zone has a "real" sensor entity (allows removing the multi-sensor workaround)
 
-**Status check (2026-08-03):** `sensor.yard_middle_moisture_humidity` is live and reporting (75% at 15:55 UTC); `sensor.middle_yard_soil_humidity` is still `unavailable` (last update 06:54 UTC). The coordinator averages available sensors, so Yard Middle currently reads correctly off the one surviving sensor — the zone is not blind today.
+**Status check (2026-08-03):** `sensor.yard_west_middle_soil_moisture` is live and reporting (75% at 15:55 UTC); `sensor.middle_yard_soil_humidity` is still `unavailable` (last update 06:54 UTC). The coordinator averages available sensors, so Yard Middle currently reads correctly off the one surviving sensor — the zone is not blind today.
 
 **New dependency (2026-08-03):** `script.backyard_recovery_deep_soak` (Recovery Catchup Soak) now gates each zone on `adaptive_irrigation_<zone>_moisture < <zone>_soil_threshold`, **fail-open** on bad data. If Yard Middle's remaining sensor also drops, the zone will be watered on every catchup run with no gate protection. That raises the priority of the "replace the dead sensor with a template E+W average" item above — it restores redundancy, not just a nicer entity.
 
@@ -277,7 +358,7 @@ Currently the summer watering window is enforced globally (trigger at 5:30am, re
 
 ## Irrigation — East Sensor Staleness — PENDING
 
-East yard soil sensor (`sensor.east_yard_soil_sensor_humidity`) stopped reporting overnight (last update ~11pm MDT), causing the 5:30am automation to see it as stale and fall back to a 6-minute survival dose. Sensor hardware is fine; Zigbee integration dropped the connection.
+East yard soil sensor (`sensor.yard_east_soil_moisture`) stopped reporting overnight (last update ~11pm MDT), causing the 5:30am automation to see it as stale and fall back to a 6-minute survival dose. Sensor hardware is fine; Zigbee integration dropped the connection.
 
 Also: `sensor.east_yard_soil_sensor_evapotranspiration` goes `unknown` when the parent sensor is stale — this is a calculated value from the Third Reality integration.
 
@@ -299,7 +380,7 @@ Implemented via counter-automation pattern (no YAML surgery). Helpers in `config
 
 ## Garage Occupied Group — DONE (2026-05-16)
 
-User manually updated via HA UI. `binary_sensor.garage_occupied` now includes `binary_sensor.garage_presence_sensor_presence`.
+User manually updated via HA UI. `binary_sensor.garage_occupied` now includes `binary_sensor.garage_presence_presence`.
 
 ---
 
@@ -318,7 +399,7 @@ Button card added to irrigation dashboard (`dashboard-irrigation`) via websocket
 ## Adaptive HVAC v0.3.3 — Pending
 
 ### Cleanup
-- [ ] Clean up stale `switch.adaptive_hvac_calebs_office_auto` (no `_2`) entity registry entry — orphaned, safe to delete via Settings → Entities
+- [x] Stale `switch.adaptive_hvac_calebs_office_auto` (no `_2`) — already in `deleted_entities` (verified 2026-10-10)
 - [ ] Rename `binary_sensor.windows_assumed_open_2` → `windows_assumed_open` in entity registry now that the old broken one is deleted
 
 ### Deferred features (parking lot)
@@ -331,7 +412,7 @@ Button card added to irrigation dashboard (`dashboard-irrigation`) via websocket
 
 ## Master Bath — Shower-Triggered 100% Underlights — IDEA (analysis done 2026-08-09, not built)
 
-**Goal:** Tia manually pushes `light.led_underlights` to 100% when showering because Adaptive
+**Goal:** Tia manually pushes `light.master_bath_underlights` to 100% when showering because Adaptive
 Lighting dims it after sundown. That manual push is what trips AL's `take_over_control` lock
 (`autoreset_control_seconds: 0`), which is the root cause of the recurring "underlights
 unexpectedly dim" bug. Automating the boost removes the manual push, and with it the lockout.
@@ -376,7 +457,7 @@ Backtested over 11.6 days of recorder history (Jul 29 – Aug 8), 10 bedtime eve
 
 ### Side findings
 - [ ] **`switch.adaptive_lighting_master_bathroom` is currently locked out** —
-      `manual_control: ['light.led_underlights']` as of 2026-08-09. The 2026-07-26 bug is live
+      `manual_control: ['light.master_bath_underlights']` as of 2026-08-09. The 2026-07-26 bug is live
       right now; underlights will not adapt until cleared. Check
       `automation.master_bath_detect_unexpected_dim_underlights_diagnostic` for the cause.
 - [ ] The daily 05:05–05:25 water flow is **irrigation, not a morning shower** (same minute daily,
