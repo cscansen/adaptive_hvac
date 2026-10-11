@@ -4,6 +4,15 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.2] - 2026-10-11
+
+### Fixed
+- **Integration no longer locks its own fans.** Fan commands dispatched by the system
+  coordinator carried no parent context, so the zone fan-change handler mistook them
+  for manual changes and set the user fan lock — leaving an integration-started fan
+  "locked by user" (and never turned back off) until midnight. Fan service calls are
+  now tagged with an integration-owned context that the handler ignores.
+
 ## [0.4.1] - 2026-10-02
 
 ### Fixed

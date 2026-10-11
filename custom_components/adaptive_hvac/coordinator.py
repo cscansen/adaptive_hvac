@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from collections import deque
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Context, HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.event import async_track_time_change
@@ -57,6 +57,12 @@ from .logic import (
 _LOGGER = logging.getLogger(__name__)
 
 TREND_WINDOW_MIN = 30
+
+
+# Context IDs of fan service calls this integration dispatched. The zone fan-change
+# handler skips state changes carrying one of these, so our own commands never trip
+# the user fan lock. (Coordinator calls have no parent_id, so that check alone misses them.)
+_OWN_FAN_CONTEXT_IDS: deque[str] = deque(maxlen=64)
 
 
 class ZoneCoordinator(DataUpdateCoordinator):
@@ -179,8 +185,11 @@ class ZoneCoordinator(DataUpdateCoordinator):
             return
         if new_state.state in ("unavailable", "unknown"):
             return
-        # Skip our own dispatches: integration service calls have parent_id but no user_id.
-        # Physical switch presses and HA UI/app changes should trigger the lock.
+        # Skip our own dispatches (tagged in _dispatch_fans), plus automation-originated
+        # service calls (parent_id, no user_id). Physical switch presses and HA UI/app
+        # changes should trigger the lock.
+        if new_state.context.id in _OWN_FAN_CONTEXT_IDS:
+            return
         if new_state.context.user_id is None and new_state.context.parent_id is not None:
             return
         self._fan_locked = True
@@ -736,12 +745,16 @@ class SystemCoordinator(DataUpdateCoordinator):
             for fan_entity, speed_pct in zone_decision.fan_commands.items():
                 if speed_pct is None:
                     continue
+                context = Context()
+                _OWN_FAN_CONTEXT_IDS.append(context.id)
                 if speed_pct == 0:
                     await self.hass.services.async_call(
                         "fan", "turn_off", {"entity_id": fan_entity},
+                        context=context,
                     )
                 else:
                     await self.hass.services.async_call(
                         "fan", "turn_on",
                         {"entity_id": fan_entity, "percentage": speed_pct},
+                        context=context,
                     )
