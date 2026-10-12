@@ -234,6 +234,10 @@ def markdown_card(zones: list[dict]) -> dict:
         "**Night Mode:** {{ 'ACTIVE 🌙' if state_attr('sensor.adaptive_hvac_status', 'night_mode_active') "
         "else 'inactive' }}",
         "",
+        "**Sweatshirt Mode:** {% if is_state('switch.adaptive_hvac_sweatshirt_mode', 'on') %}"
+        "{{ 'SUSPENDED ❄️ — too cold, heat allowed' if state_attr('switch.adaptive_hvac_sweatshirt_mode', 'suspended') "
+        "else 'ON 🧥 — heat off (emergency only)' }}{% else %}off{% endif %}",
+        "",
         "**Cooling Blocked:** {{ 'YES ⚠️ — ' + (state_attr('binary_sensor.adaptive_hvac_cooling_blocked', 'reason') or '') "
         "if is_state('binary_sensor.adaptive_hvac_cooling_blocked', 'on') else 'no' }}",
     ]
@@ -379,6 +383,20 @@ def controls_card() -> dict:
     }
 
 
+def sweatshirt_card() -> dict:
+    """Shoulder-season "wear a hoodie" toggle — kept near the top so it's one tap away."""
+    return {
+        "type": "entities",
+        "title": "Sweatshirt Mode",
+        "entities": [
+            {"entity": "switch.adaptive_hvac_sweatshirt_mode", "name": "Sweatshirt Mode (no heat)"},
+            {"entity": "number.adaptive_hvac_sweatshirt_cold_threshold", "name": "Suspend if forecast high below"},
+            {"type": "attribute", "entity": "switch.adaptive_hvac_sweatshirt_mode",
+             "attribute": "signal_temp", "name": "Today's cold signal", "suffix": "°F"},
+        ],
+    }
+
+
 def night_mode_card() -> dict:
     return {
         "type": "entities",
@@ -470,6 +488,7 @@ def build_dashboard(zones: list[dict], sys_cfg: dict) -> dict:
     z_cards = [zone_card(z) for z in zones]
     cards = [
         markdown_card(zones),
+        sweatshirt_card(),
         system_glance_card(sys_cfg),
         *zone_pairs(z_cards),
         fan_status_card(zones),

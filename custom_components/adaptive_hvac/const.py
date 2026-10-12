@@ -108,6 +108,11 @@ DEFAULT_WINDOW_MIN_OUTDOOR = 60.0
 CONF_WINDOW_MAX_OUTDOOR = "window_max_outdoor_temp"
 DEFAULT_WINDOW_MAX_OUTDOOR = 75.0
 
+# System — Sweatshirt mode: heat blocked (emergency heat excepted) until today's forecast
+# high drops below this, at which point it suspends itself and heat runs normally.
+CONF_SWEATSHIRT_COLD_THRESHOLD = "sweatshirt_cold_threshold"
+DEFAULT_SWEATSHIRT_COLD_THRESHOLD = 50.0
+
 # ===== DEFAULTS (ZONE) =====
 
 # Zone — Target temp (single threshold: fan on above this, fan off at/below)
@@ -187,6 +192,7 @@ from .logic import (  # noqa: E402
     REASON_OUTDOOR_WARM,
     REASON_OPEN_WINDOWS_WARM,
     REASON_AQI_HOLD_HEAT,
+    REASON_SWEATSHIRT,
 )
 
 # Service names

@@ -18,6 +18,7 @@ from .const import (
     DEFAULT_EMERGENCY_COOL_THRESHOLD,
     DEFAULT_COOL_EXTERIOR_THRESHOLD,
     DEFAULT_HEAT_EXTERIOR_THRESHOLD,
+    DEFAULT_SWEATSHIRT_COLD_THRESHOLD,
     DEFAULT_UPSTAIRS_DEMAND_BOOST,
     DEFAULT_FAN_CIRCULATION_DELTA,
     DEFAULT_ZONE_TARGET_TEMP,
@@ -58,6 +59,7 @@ async def async_setup_entry(
         EmergencyCoolThresholdNumber(coordinator),
         CoolExteriorThresholdNumber(coordinator),
         HeatExteriorThresholdNumber(coordinator),
+        SweatshirtColdThresholdNumber(coordinator),
         AQIMaxForWindowsNumber(coordinator),
         WindowMinOutdoorNumber(coordinator),
         WindowMaxOutdoorNumber(coordinator),
@@ -208,6 +210,21 @@ class HeatExteriorThresholdNumber(_BaseSystemNumber):
         self._attr_native_unit_of_measurement = "°F"
         self._attr_native_min_value = 40.0
         self._attr_native_max_value = 85.0
+        self._attr_native_step = 1.0
+
+
+class SweatshirtColdThresholdNumber(_BaseSystemNumber):
+    """Sweatshirt mode suspends (heat runs normally) when today's forecast high is below this."""
+    _config_key = "sweatshirt_cold_threshold"
+    _default = DEFAULT_SWEATSHIRT_COLD_THRESHOLD
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_sweatshirt_cold_threshold"
+        self._attr_name = "Adaptive HVAC Sweatshirt Cold Threshold"
+        self._attr_native_unit_of_measurement = "°F"
+        self._attr_native_min_value = 30.0
+        self._attr_native_max_value = 65.0
         self._attr_native_step = 1.0
 
 

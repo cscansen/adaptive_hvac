@@ -25,6 +25,7 @@ async def async_setup_entry(
             SystemActiveSwitch(coordinator),
             ManualOverrideSwitch(coordinator),
             NightModeSwitch(coordinator),
+            SweatshirtModeSwitch(coordinator),
         ]
         async_add_entities(entities)
     elif entry_type == ENTRY_TYPE_ZONE:
@@ -116,6 +117,42 @@ class NightModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         self.coordinator.set_night_mode_manual(False)
+        self.async_write_ha_state()
+
+
+class SweatshirtModeSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
+    """Shoulder-season "wear a hoodie" mode — blocks heat, can't be overridden at the
+    thermostat. Emergency heat still runs; suspends itself on a genuinely cold day."""
+
+    def __init__(self, coordinator: SystemCoordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_sweatshirt_mode"
+        self._attr_name = "Adaptive HVAC Sweatshirt Mode"
+        self._attr_icon = "mdi:tshirt-crew"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last_state := await self.async_get_last_state()) is not None:
+            self.coordinator._sweatshirt_mode = last_state.state == "on"
+            self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.sweatshirt_mode
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "suspended": self.coordinator.sweatshirt_suspended,
+            "signal_temp": self.coordinator.sweatshirt_signal_temp,
+        }
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.coordinator.set_sweatshirt_mode(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.coordinator.set_sweatshirt_mode(False)
         self.async_write_ha_state()
 
 

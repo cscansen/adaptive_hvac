@@ -36,6 +36,8 @@ from logic import (
     REASON_OUTDOOR_WARM,
     REASON_OPEN_WINDOWS_WARM,
     REASON_AQI_HOLD_HEAT,
+    REASON_SWEATSHIRT,
+    sweatshirt_suspended,
 )
 
 
@@ -593,6 +595,34 @@ class TestFloorCirculation:
 
 class TestAnnotateZoneDecisions:
 
+    def test_warm_zone_fans_held_off_while_heating(self):
+        """Living room overshoots to the demand-boosted heat setpoint → must not run
+        cooling fans against the furnace (live bug 2026-10-12)."""
+        z_decision = ZoneDecision(
+            mode="cooling",
+            zone_name="Living Room",
+            fan_commands={"fan.living_room": 50, "fan.locked_one": None},
+            thermal_request="cool",
+            status="Living Room: COOLING 69.0°F > 68.0°F",
+        )
+        sys_dec = SystemDecision(thermostat_hvac_mode="heat", thermostat_setpoint=69.0)
+        annotated = annotate_zone_decisions([z_decision], sys_dec)
+        assert annotated[0].mode == "idle_warm"
+        assert annotated[0].fan_commands == {"fan.living_room": 0, "fan.locked_one": None}
+        assert "WARM" in annotated[0].status
+
+    def test_emergency_cooling_fans_kept_while_heating(self):
+        z_decision = ZoneDecision(
+            mode="emergency_cooling",
+            zone_name="Office",
+            fan_commands={"fan.office": 100},
+            thermal_request="cool",
+            status="Office: EMERGENCY COOLING 86.0°F",
+        )
+        sys_dec = SystemDecision(thermostat_hvac_mode="heat")
+        annotated = annotate_zone_decisions([z_decision], sys_dec)
+        assert annotated[0].fan_commands == {"fan.office": 100}
+
     def test_cooling_zone_relabeled_passive_when_ac_off(self):
         z_decision = ZoneDecision(
             mode="cooling",
@@ -867,3 +897,60 @@ class TestWinterGating:
         decision = decide_system(ss, zd, cfg)
         assert decision.heating_blocked is False
         assert decision.blocked_reason == ""
+
+
+class TestSweatshirtMode:
+    """Shoulder-season 'wear a hoodie' mode: heat off, emergency heat excepted."""
+
+    def _decide(self, zones=None, sweatshirt=True, suspended=False, season="winter", outdoor=40.0):
+        zones = zones or [zone(temp=62.0, target=68.0)]
+        cfg = sys_cfg(heat_threshold=68.0, heat_exterior_threshold=60.0)
+        ss = sys_state(zones, outdoor=outdoor, season=season)
+        ss.sweatshirt_mode = sweatshirt
+        ss.sweatshirt_suspended = suspended
+        ss.sweatshirt_signal = "forecast high 58°F"
+        zd = [decide_zone(z, ss, zone_cfg(target=z.zone_target_temp), cfg) for z in zones]
+        return decide_system(ss, zd, cfg)
+
+    def test_blocks_heat_that_would_otherwise_run(self):
+        assert self._decide(sweatshirt=False).thermostat_hvac_mode == "heat"
+        d = self._decide()
+        assert d.thermostat_hvac_mode == "off"
+        assert d.heating_blocked is True
+        assert d.blocked_reason == REASON_SWEATSHIRT
+        assert d.status == "SYSTEM: OFF (sweatshirt mode)"
+
+    def test_emergency_heat_still_runs(self):
+        d = self._decide(zones=[zone(temp=40.0, target=68.0)])
+        assert d.thermostat_hvac_mode == "heat"
+        assert d.heating_blocked is False
+
+    def test_suspended_lets_heat_run(self):
+        d = self._decide(suspended=True)
+        assert d.thermostat_hvac_mode == "heat"
+        assert "Sweatshirt mode SUSPENDED" in " ".join(d.reasoning)
+
+    def test_no_heat_demand_is_not_reported_as_blocked(self):
+        d = self._decide(zones=[zone(temp=70.0, target=68.0)])
+        assert d.thermostat_hvac_mode == "off"
+        assert d.heating_blocked is False
+        assert d.blocked_reason == ""
+
+    def test_summer_season_unaffected(self):
+        """Heat-only: AC decisions must not change when sweatshirt mode is on."""
+        zones = [zone(temp=80.0, target=72.0)]
+        on = self._decide(zones=zones, season="summer", outdoor=85.0)
+        off = self._decide(zones=zones, season="summer", outdoor=85.0, sweatshirt=False)
+        assert on.thermostat_hvac_mode == off.thermostat_hvac_mode == "cool"
+
+    def test_suspension_hysteresis(self):
+        # Not suspended: suspends only below threshold
+        assert sweatshirt_suspended(50.0, 50.0, was_suspended=False) is False
+        assert sweatshirt_suspended(49.0, 50.0, was_suspended=False) is True
+        # Suspended: stays suspended until threshold + 3°F
+        assert sweatshirt_suspended(52.0, 50.0, was_suspended=True) is True
+        assert sweatshirt_suspended(53.0, 50.0, was_suspended=True) is False
+
+    def test_unknown_signal_keeps_previous_state(self):
+        assert sweatshirt_suspended(None, 50.0, was_suspended=True) is True
+        assert sweatshirt_suspended(None, 50.0, was_suspended=False) is False

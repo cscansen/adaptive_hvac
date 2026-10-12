@@ -4,6 +4,23 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.0] - 2026-10-12
+
+### Added
+- **Sweatshirt mode** (`switch.adaptive_hvac_sweatshirt_mode`) — shoulder-season "wear a
+  hoodie" mode. Blocks heat (AC unaffected); `blocked_reason` = `sweatshirt`. Can't be
+  overridden: a thermostat switched to heat/auto is reverted immediately, and user heat
+  setpoint changes aren't adopted. Emergency heat still runs. Suspends itself when
+  today's forecast high (fallback: current outdoor) is below
+  `number.adaptive_hvac_sweatshirt_cold_threshold` (default 50°F), resuming at +3°F.
+  State survives restarts. Dashboard card + status line added.
+
+### Fixed
+- **Cooling fans no longer fight the furnace.** While the system is heating, a zone
+  above its target (typically the thermostat's own room overshooting to a
+  demand-boosted setpoint) used to run "passive cooling" ceiling fans. It now holds
+  them off and reports `idle_warm`. Locked fans and emergency cooling are untouched.
+
 ## [0.4.2] - 2026-10-11
 
 ### Fixed

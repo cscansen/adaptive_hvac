@@ -22,6 +22,11 @@ REASON_WINDOW_OPEN_HEAT = "window_open_heat"        # winter: furnace off, windo
 REASON_OUTDOOR_WARM = "outdoor_warm"                # winter: above heat_exterior_threshold
 REASON_OPEN_WINDOWS_WARM = "open_windows_warm"      # winter: warmer outside, air is clean
 REASON_AQI_HOLD_HEAT = "aqi_hold_heat"              # winter: warmer outside but smoky
+REASON_SWEATSHIRT = "sweatshirt"                    # winter: sweatshirt mode, wear a hoodie
+
+# Sweatshirt mode re-engages only once the cold signal is this far back above the
+# threshold, so a forecast hovering at the line doesn't flap the furnace on and off.
+SWEATSHIRT_HYSTERESIS = 3.0  # °F
 
 
 # US EPA AQI breakpoints — (upper bound inclusive, label)
@@ -75,6 +80,11 @@ class SystemState:
     # Computed by the coordinator (fail-closed: unknown AQI is not "ok"). Never unblocks
     # the HVAC — it only decides whether "open the windows instead" is honest advice.
     aqi_ok: bool = True
+    # Sweatshirt mode: heat blocked (emergency heat excepted). Suspended by the coordinator
+    # (see sweatshirt_suspended()) when it's genuinely cold out — then heat runs normally.
+    sweatshirt_mode: bool = False
+    sweatshirt_suspended: bool = False
+    sweatshirt_signal: str = ""          # human-readable cold signal, e.g. "forecast high 47°F"
 
 
 @dataclass
@@ -137,6 +147,8 @@ class SystemConfig:
     # Absolute band in which opening the windows is worth recommending (°F)
     window_min_outdoor: float = 60.0
     window_max_outdoor: float = 75.0
+    # Sweatshirt mode suspends when the cold signal (today's forecast high) drops below this
+    sweatshirt_cold_threshold: float = 50.0
 
 
 def windows_are_recommended(sys_state: SystemState, cfg: SystemConfig) -> bool:
@@ -385,6 +397,32 @@ def _decide_system(
             reasoning=reasoning,
         )
 
+    # Sweatshirt mode — heat is off by household choice, not because a gate tripped.
+    # Sits after the emergency returns above so a zone at emergency_heat_threshold still
+    # gets heat. Summer season never heats, so there is nothing to block there.
+    if sys_state.sweatshirt_mode and season == "winter":
+        if sys_state.sweatshirt_suspended:
+            reasoning.append(
+                f"Sweatshirt mode SUSPENDED — too cold to ride out ({sys_state.sweatshirt_signal} "
+                f"< {cfg.sweatshirt_cold_threshold:.0f}°F)"
+            )
+        else:
+            heating_zones = [d for d in zone_decisions if d.thermal_request == "heat"]
+            reasoning.append(
+                f"Heat BLOCKED: sweatshirt mode ({sys_state.sweatshirt_signal} "
+                f"≥ {cfg.sweatshirt_cold_threshold:.0f}°F)"
+            )
+            fan_mode_ss, fan_reasoning_ss = _off_fan_mode()
+            return SystemDecision(
+                thermostat_hvac_mode="off",
+                whole_house_fan_mode=fan_mode_ss,
+                season=season,
+                status="SYSTEM: OFF (sweatshirt mode)",
+                reasoning=reasoning + fan_reasoning_ss,
+                heating_blocked=bool(heating_zones),
+                blocked_reason=REASON_SWEATSHIRT if heating_zones else "",
+            )
+
     # Window open gate — an open window means the house is being aired out on purpose,
     # so neither the AC nor the furnace should fight it. Runs in both seasons; the
     # emergency returns above still take precedence, so a stuck-open sensor can't
@@ -590,6 +628,21 @@ def _decide_system(
     )
 
 
+def sweatshirt_suspended(signal_temp: Optional[float], threshold: float, was_suspended: bool) -> bool:
+    """Whether sweatshirt mode should stand aside because it's genuinely cold out.
+
+    signal_temp is today's forecast high (falling back to current outdoor temp) — a cold
+    *day*, not a cold morning, is what makes a hoodie the wrong answer. Unknown signal
+    keeps the previous state rather than guessing. Hysteresis: suspends below threshold,
+    resumes only at threshold + SWEATSHIRT_HYSTERESIS.
+    """
+    if signal_temp is None:
+        return was_suspended
+    if was_suspended:
+        return signal_temp < threshold + SWEATSHIRT_HYSTERESIS
+    return signal_temp < threshold
+
+
 def _floor_averages(zone_states: list[ZoneState]) -> dict[str, float]:
     """Average temperature per floor ID (zones with no floor or no reading excluded)."""
     floors: dict[str, list[float]] = {}
@@ -649,7 +702,22 @@ def annotate_zone_decisions(
     for d in zone_decisions:
         fans_running = any(spd > 0 for spd in d.fan_commands.values())
 
-        if d.thermal_request == "cool" and system_decision.thermostat_hvac_mode != "cool":
+        if (
+            d.thermal_request == "cool"
+            and system_decision.thermostat_hvac_mode == "heat"
+            and d.mode != "emergency_cooling"
+        ):
+            # Furnace is running for another zone — a warm zone (often the thermostat's
+            # own room, overshooting to a demand-boosted setpoint) must not spin up
+            # cooling fans against it. Locked fans (None) are left untouched.
+            d = replace(
+                d,
+                mode="idle_warm",
+                fan_commands={f: (None if spd is None else 0) for f, spd in d.fan_commands.items()},
+                status=d.status.replace("COOLING", "WARM"),
+                reasoning=d.reasoning + ["Heat running — cooling fans held off"],
+            )
+        elif d.thermal_request == "cool" and system_decision.thermostat_hvac_mode != "cool":
             if fans_running:
                 # Fans spinning but AC blocked — genuinely passive (airflow without compressor)
                 d = replace(

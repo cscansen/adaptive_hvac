@@ -39,6 +39,7 @@ from .const import (
     DEFAULT_AQI_MAX_FOR_WINDOWS,
     DEFAULT_WINDOW_MIN_OUTDOOR,
     DEFAULT_WINDOW_MAX_OUTDOOR,
+    DEFAULT_SWEATSHIRT_COLD_THRESHOLD,
     SEASON_SUMMER,
     SEASON_WINTER,
 )
@@ -52,6 +53,7 @@ from .logic import (
     decide_zone,
     decide_system,
     annotate_zone_decisions,
+    sweatshirt_suspended,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -321,6 +323,9 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._night_mode_manual: bool = False
         self.night_mode_active: bool = False
         self.last_aqi: Optional[float] = None
+        self._sweatshirt_mode: bool = False
+        self.sweatshirt_suspended: bool = False
+        self.sweatshirt_signal_temp: Optional[float] = None
 
     def determine_calendar_season(self) -> str:
         """Determine season — respects manual override, otherwise calendar-based."""
@@ -346,6 +351,21 @@ class SystemCoordinator(DataUpdateCoordinator):
         new_state = event.data.get("new_state")
         if not new_state:
             return
+
+        # Sweatshirt mode can't be overridden at the thermostat: anyone (wall unit, its app,
+        # HA UI) switching to a heating mode is reverted immediately rather than waiting up
+        # to SCAN_INTERVAL_MINUTES for the next dispatch. Our own emergency-heat dispatch
+        # matches last_decision and is left alone; degraded mode has handed control back.
+        if self.sweatshirt_blocking and new_state.state in ("heat", "heat_cool", "auto"):
+            target = self.last_decision.thermostat_hvac_mode if self.last_decision else "off"
+            if new_state.state != target:
+                _LOGGER.info(f"Sweatshirt mode: thermostat set to {new_state.state} — reverting to {target}")
+                self.hass.async_create_task(self.hass.services.async_call(
+                    "climate", "set_hvac_mode",
+                    {"entity_id": new_state.entity_id, "hvac_mode": target},
+                ))
+                return
+
         # Only adopt changes triggered by a logged-in HA user (UI or app).
         # Thermostat-internal schedule changes and device boot-up events have user_id=None
         # and would otherwise overwrite the user's configured setpoint.
@@ -368,6 +388,9 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         season = self.determine_calendar_season()
         key = "ac_setpoint" if season == SEASON_SUMMER else "heat_setpoint"
+        if key == "heat_setpoint" and self.sweatshirt_blocking:
+            _LOGGER.info(f"Sweatshirt mode: ignoring user heat setpoint {new_setpoint}°F")
+            return
 
         _LOGGER.info(
             f"User adjusted thermostat to {new_setpoint}°F — adopting as {season} {key}"
@@ -382,6 +405,40 @@ class SystemCoordinator(DataUpdateCoordinator):
             self._suppress_setpoint_reload = True
             self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
             _LOGGER.debug(f"Persisted {key}={new_setpoint} to config entry options")
+
+    @property
+    def sweatshirt_mode(self) -> bool:
+        return self._sweatshirt_mode
+
+    @property
+    def sweatshirt_blocking(self) -> bool:
+        """Sweatshirt mode is on, not suspended for cold, and we're in control."""
+        return self._sweatshirt_mode and not self.sweatshirt_suspended and not self._degraded_mode
+
+    def set_sweatshirt_mode(self, enabled: bool) -> None:
+        """Toggle via switch.adaptive_hvac_sweatshirt_mode."""
+        self._sweatshirt_mode = enabled
+        if not enabled:
+            self.sweatshirt_suspended = False
+        if self.last_decision is not None:
+            self.async_set_updated_data(self.last_decision)
+        self.hass.async_create_task(self.async_refresh())
+
+    async def _read_forecast_high(self) -> Optional[float]:
+        """Today's forecast high from the weather entity, or None if unavailable."""
+        weather_entity = self.system_config.get("weather_entity")
+        if not weather_entity:
+            return None
+        try:
+            resp = await self.hass.services.async_call(
+                "weather", "get_forecasts",
+                {"entity_id": weather_entity, "type": "daily"},
+                blocking=True, return_response=True,
+            )
+            return float(resp[weather_entity]["forecast"][0]["temperature"])
+        except Exception as e:  # noqa: BLE001 — any failure just means "no forecast"
+            _LOGGER.debug(f"Forecast high unavailable: {e}")
+            return None
 
     def _read_outdoor_temp(self) -> float:
         """Read outdoor temperature — local sensor takes priority over weather entity."""
@@ -641,6 +698,21 @@ class SystemCoordinator(DataUpdateCoordinator):
         manual_override = self.system_config.get("manual_override", False)
         system_active = self.system_config.get("system_active", True)
 
+        # Sweatshirt mode: suspend on a genuinely cold *day* (forecast high), not a cold
+        # morning — falls back to the current outdoor reading if the forecast is missing.
+        sweatshirt_signal = ""
+        if self._sweatshirt_mode:
+            forecast_high = await self._read_forecast_high()
+            signal_temp = forecast_high if forecast_high is not None else outdoor_temp
+            label = "forecast high" if forecast_high is not None else "outdoor now"
+            self.sweatshirt_signal_temp = signal_temp
+            self.sweatshirt_suspended = sweatshirt_suspended(
+                signal_temp,
+                self._effective_setpoint("sweatshirt_cold_threshold", DEFAULT_SWEATSHIRT_COLD_THRESHOLD),
+                self.sweatshirt_suspended,
+            )
+            sweatshirt_signal = f"{label} {signal_temp:.0f}°F"
+
         # Build zone states for system decision
         zone_states = []
         for coord in self.zone_coordinators:
@@ -667,6 +739,9 @@ class SystemCoordinator(DataUpdateCoordinator):
             windows_openable=windows_openable,
             outdoor_aqi=self.last_aqi,
             aqi_ok=self._aqi_ok(self.last_aqi),
+            sweatshirt_mode=self._sweatshirt_mode,
+            sweatshirt_suspended=self.sweatshirt_suspended,
+            sweatshirt_signal=sweatshirt_signal,
         )
 
         self.night_mode_active = self._is_night_mode_active()
@@ -689,6 +764,7 @@ class SystemCoordinator(DataUpdateCoordinator):
             fan_circulation_delta=self._effective_setpoint("fan_circulation_delta", DEFAULT_FAN_CIRCULATION_DELTA),
             window_min_outdoor=self._effective_setpoint("window_min_outdoor_temp", DEFAULT_WINDOW_MIN_OUTDOOR),
             window_max_outdoor=self._effective_setpoint("window_max_outdoor_temp", DEFAULT_WINDOW_MAX_OUTDOOR),
+            sweatshirt_cold_threshold=self._effective_setpoint("sweatshirt_cold_threshold", DEFAULT_SWEATSHIRT_COLD_THRESHOLD),
         )
 
         decision = decide_system(sys_state, zone_decisions, cfg)
