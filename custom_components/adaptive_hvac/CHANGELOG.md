@@ -4,6 +4,13 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.2] - 2026-10-16
+
+### Fixed
+- Degraded mode (thermostat handed back to auto + notification) now needs the sensor problem to persist for a full
+  scan interval, not just 2 evaluations. 0.5.1's extra startup refreshes could otherwise count 2 "degraded" cycles
+  seconds apart while sensors were still loading, and switch the thermostat to auto on HA start.
+
 ## [0.5.1] - 2026-10-16
 
 ### Fixed

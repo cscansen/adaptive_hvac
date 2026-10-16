@@ -319,6 +319,7 @@ class SystemCoordinator(DataUpdateCoordinator):
         self._last_season: Optional[str] = None
         self._suppress_setpoint_reload: bool = False
         self._failsafe_cycle_count: int = 0
+        self._failsafe_since: Optional[datetime] = None
         self._degraded_mode: bool = False
         self._night_mode_manual: bool = False
         self.night_mode_active: bool = False
@@ -625,7 +626,12 @@ class SystemCoordinator(DataUpdateCoordinator):
 
         if system_degraded:
             self._failsafe_cycle_count += 1
-            if self._failsafe_cycle_count >= 2 and not self._degraded_mode:
+            if self._failsafe_since is None:
+                self._failsafe_since = dt_util.utcnow()
+            # Time guard, not just a cycle count: zone setup triggers extra refreshes seconds apart at HA start
+            # (sensors still loading), and two of those must not hand the thermostat back to auto.
+            persisted = dt_util.utcnow() - self._failsafe_since >= timedelta(minutes=SCAN_INTERVAL_MINUTES, seconds=-30)
+            if self._failsafe_cycle_count >= 2 and persisted and not self._degraded_mode:
                 self._degraded_mode = True
                 _LOGGER.warning("Adaptive HVAC: sensor degradation detected — handing thermostat back to auto")
                 thermostat = self.system_config.get("thermostat_entity")
@@ -688,6 +694,7 @@ class SystemCoordinator(DataUpdateCoordinator):
                     {"notification_id": "adaptive_hvac_degraded"},
                 )
             self._failsafe_cycle_count = 0
+            self._failsafe_since = None
 
         # Detect season and handle season transitions
         current_season = self.determine_calendar_season()
