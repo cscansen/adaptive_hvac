@@ -208,7 +208,6 @@ class ZoneAutoControlSwitch(RestoreEntity, SwitchEntity):
         return {
             "identifiers": {(DOMAIN, f"zone_{self.zone_name}")},
             "name": f"{self.zone_name} HVAC",
-            "via_device": (DOMAIN, "system"),
         }
 
     async def async_turn_on(self, **kwargs) -> None:
@@ -258,7 +257,6 @@ class FanLockedSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity):
         return {
             "identifiers": {(DOMAIN, f"zone_{self.zone_name}")},
             "name": f"{self.zone_name} HVAC",
-            "via_device": (DOMAIN, "system"),
         }
 
     async def async_turn_on(self, **kwargs) -> None:

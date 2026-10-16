@@ -4,6 +4,12 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.1] - 2026-10-16
+
+### Fixed
+- Removed the deprecated `via_device` from zone devices. It pointed at a parent device that was never created, so it
+  linked nothing. It only made HA log a deprecation warning, and it would have failed in HA 2027.8.
+
 ## [0.6.0] - 2026-10-16
 
 ### Changed
