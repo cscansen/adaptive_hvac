@@ -4,6 +4,23 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] - 2026-10-16
+
+### Changed
+- **Redesigned dashboard.** The dashboard now has a **Home** tab with a status headline, the thermostat, the
+  sweatshirt/night toggles and one section per zone (temperature, target, fan speed, Automatic). The **Tuning** tab
+  holds system switches, setpoints, thresholds, night schedule, air & windows, history and logbook.
+  - Warnings (system off, manual override, cooling/heating blocked) show only while active.
+  - The "Fan held" tile appears only while a fan is locked.
+  - Duplicate cards removed.
+- **Dashboard is built by the integration.** The new `adaptive_hvac.rebuild_dashboard` action builds it and
+  saves it straight to the dashboard, so changes appear on refresh with no HA restart. Entity IDs come from the
+  entity registry, so renamed entities no longer break it. The Rebuild button asks for confirmation.
+
+### Removed
+- `scripts/generate_dashboard.py`, and the `shell_command` + script setup it needed. A Rebuild button on an old
+  dashboard stops working; rebuild once with the new action to replace it.
+
 ## [0.5.2] - 2026-10-16
 
 ### Fixed

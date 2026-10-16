@@ -236,23 +236,24 @@ manually push the day setpoint down every evening and back up every morning.
 
 ## Dashboard
 
-The integration ships with a dashboard generator that builds a fully populated Lovelace HVAC dashboard from your live zone configuration. No manual editing required; re-run whenever zones are added or removed.
+The integration builds its own dashboard (a **Home** tab for everyday use and a **Tuning** tab
+for setpoints and thresholds) from your live zone configuration via the
+`adaptive_hvac.rebuild_dashboard` action. It saves directly; no token, SSH or restart is needed.
 
 ### Required: deploy the dashboard
 
-Deploying the generated dashboard isn't optional polish — it's how you set the night mode
+Deploying the dashboard isn't optional polish — it's how you set the night mode
 schedule and both setpoint pairs. The setup wizard only asks about zones, thresholds, and
 which existing entities (if any) should drive night mode; the actual setpoint and schedule
 *values* are dashboard-only `number` entities with no other UI (short of Developer Tools →
 States, which is unpleasant for everyday use). Right after adding the integration:
 
-1. Follow **[DASHBOARD.md](DASHBOARD.md)** — pick **Option A** (copy-paste into the Raw
-   Config Editor, no SSH needed) if you don't have host access, or **Option B** (SSH
-   deploy) if you do.
-2. Confirm the **Night Mode** card shows the toggle plus all four numbers (AC/Heat
+1. Create an empty dashboard with URL `dashboard-hvac`, then run `adaptive_hvac.rebuild_dashboard`
+   — see **[DASHBOARD.md](DASHBOARD.md)**.
+2. On the **Tuning** tab, confirm the **Night schedule** card shows all four numbers (AC/Heat
    setpoint, Start/End hour) with sensible values before relying on night mode.
 
-The generated dashboard includes a **Rebuild Dashboard** button that regenerates the dashboard in place without a token — one tap from the UI, for whenever zones change later.
+The dashboard's **Rebuild dashboard** button (Tuning tab) regenerates it whenever zones change.
 
 ## Zones with compound fan logic (e.g. garage)
 

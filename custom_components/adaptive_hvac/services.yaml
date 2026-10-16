@@ -13,3 +13,15 @@ set_manual_override:
       example: true
       selector:
         boolean:
+
+rebuild_dashboard:
+  name: Rebuild Dashboard
+  description: Regenerate the Adaptive HVAC dashboard from the current zone setup and save it (no restart needed).
+  fields:
+    dashboard:
+      name: Dashboard URL
+      description: URL path of an existing UI-managed dashboard to overwrite.
+      default: dashboard-hvac
+      example: dashboard-hvac
+      selector:
+        text:
