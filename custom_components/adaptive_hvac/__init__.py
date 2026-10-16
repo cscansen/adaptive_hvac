@@ -63,6 +63,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # _fan_locked from persisted state before the first coordinator evaluation runs
             await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "number"])
             await coordinator.async_config_entry_first_refresh()
+            # The system entry usually finishes setup before the zones; without this its status reads
+            # "No zone data available" until the next scheduled refresh (~3 min after every HA start).
+            _request_system_refresh(hass)
 
         if entry_type == ENTRY_TYPE_SYSTEM:
             # Wrap the reload listener so setpoint adoptions don't trigger a full reload
@@ -80,6 +83,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as e:
         _LOGGER.error(f"Error setting up Adaptive HVAC entry {entry.entry_id}: {e}", exc_info=True)
         raise
+
+
+def _request_system_refresh(hass: HomeAssistant) -> None:
+    """Ask the system coordinator (if already set up) to re-aggregate; its debouncer coalesces zone bursts."""
+    for e in hass.config_entries.async_entries(DOMAIN):
+        coord = hass.data.get(DOMAIN, {}).get(e.entry_id)
+        if e.data.get("entry_type") == ENTRY_TYPE_SYSTEM and coord is not None:
+            hass.async_create_task(coord.async_request_refresh())
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

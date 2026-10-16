@@ -606,7 +606,9 @@ class SystemCoordinator(DataUpdateCoordinator):
                 _LOGGER.error(f"Error refreshing zone {coord.zone_name}: {e}", exc_info=True)
 
         if not zone_decisions:
-            decision = SystemDecision(thermostat_hvac_mode="off", status="No zone data available")
+            # season set explicitly: the dataclass default ("summer") leaked into sensor.adaptive_hvac_season at startup
+            decision = SystemDecision(thermostat_hvac_mode="off", status="No zone data available",
+                                      season=self.determine_calendar_season())
             self.last_decision = decision
             return decision
 
@@ -673,6 +675,7 @@ class SystemCoordinator(DataUpdateCoordinator):
                 thermostat_hvac_mode="off",
                 status=f"SYSTEM: DEGRADED ({self._failsafe_cycle_count} cycles)",
                 reasoning=[reason],
+                season=self.determine_calendar_season(),
             )
             self.last_decision = decision
             return decision

@@ -4,6 +4,14 @@ All notable changes to the Adaptive HVAC integration will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.1] - 2026-10-16
+
+### Fixed
+- Status no longer reads "No zone data available" for ~3 min after every HA start: each zone asks the system
+  coordinator to refresh once its first evaluation is done (debounced).
+- `sensor.adaptive_hvac_season` no longer flips to "summer" during startup or degraded mode. Those early-return
+  decisions now carry the real calendar season instead of the dataclass default.
+
 ## [0.5.0] - 2026-10-12
 
 ### Added
